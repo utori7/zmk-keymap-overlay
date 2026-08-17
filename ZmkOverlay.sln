@@ -1,0 +1,59 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{66B174E9-63E2-4B29-89BA-9908537FF81F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ZmkOverlay.Core", "src\ZmkOverlay.Core\ZmkOverlay.Core.csproj", "{77112961-9C16-4801-BD11-19CAAB47275E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ZmkOverlay.App", "src\ZmkOverlay.App\ZmkOverlay.App.csproj", "{BA30476C-A722-46E4-AADC-2C9E2E22C808}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{4CF3D430-AD21-47C5-824E-0C9935521AA3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HotkeyProbe", "tools\HotkeyProbe\HotkeyProbe.csproj", "{CD6972E4-C754-438F-AAFE-37D72E4FA839}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KeymapDump", "tools\KeymapDump\KeymapDump.csproj", "{D80676B1-9CE9-47EE-8D28-E2AF9421C0D6}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{381BFEAB-FB45-46A6-993D-2D4E0FA124B9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ZmkOverlay.Core.Tests", "tests\ZmkOverlay.Core.Tests\ZmkOverlay.Core.Tests.csproj", "{A9AC24B9-7978-4C97-95E5-DBC21633A2BB}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{77112961-9C16-4801-BD11-19CAAB47275E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{77112961-9C16-4801-BD11-19CAAB47275E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{77112961-9C16-4801-BD11-19CAAB47275E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{77112961-9C16-4801-BD11-19CAAB47275E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BA30476C-A722-46E4-AADC-2C9E2E22C808}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BA30476C-A722-46E4-AADC-2C9E2E22C808}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BA30476C-A722-46E4-AADC-2C9E2E22C808}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BA30476C-A722-46E4-AADC-2C9E2E22C808}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CD6972E4-C754-438F-AAFE-37D72E4FA839}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CD6972E4-C754-438F-AAFE-37D72E4FA839}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CD6972E4-C754-438F-AAFE-37D72E4FA839}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CD6972E4-C754-438F-AAFE-37D72E4FA839}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D80676B1-9CE9-47EE-8D28-E2AF9421C0D6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D80676B1-9CE9-47EE-8D28-E2AF9421C0D6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D80676B1-9CE9-47EE-8D28-E2AF9421C0D6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D80676B1-9CE9-47EE-8D28-E2AF9421C0D6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A9AC24B9-7978-4C97-95E5-DBC21633A2BB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A9AC24B9-7978-4C97-95E5-DBC21633A2BB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A9AC24B9-7978-4C97-95E5-DBC21633A2BB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A9AC24B9-7978-4C97-95E5-DBC21633A2BB}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{77112961-9C16-4801-BD11-19CAAB47275E} = {66B174E9-63E2-4B29-89BA-9908537FF81F}
+		{BA30476C-A722-46E4-AADC-2C9E2E22C808} = {66B174E9-63E2-4B29-89BA-9908537FF81F}
+		{CD6972E4-C754-438F-AAFE-37D72E4FA839} = {4CF3D430-AD21-47C5-824E-0C9935521AA3}
+		{D80676B1-9CE9-47EE-8D28-E2AF9421C0D6} = {4CF3D430-AD21-47C5-824E-0C9935521AA3}
+		{A9AC24B9-7978-4C97-95E5-DBC21633A2BB} = {381BFEAB-FB45-46A6-993D-2D4E0FA124B9}
+	EndGlobalSection
+EndGlobal

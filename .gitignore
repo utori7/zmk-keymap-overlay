@@ -1,0 +1,14 @@
+bin/
+obj/
+.vs/
+*.user
+
+# この PC 固有の許可設定。共有する意味がない
+.claude/settings.local.json
+
+# 初回起動時に exe の隣へ書き出される
+config.json
+
+# --render の既定の出力先
+render-out/
+out/

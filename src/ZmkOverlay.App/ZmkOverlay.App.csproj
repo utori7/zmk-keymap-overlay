@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net6.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+
+    <!-- タスクトレイ常駐に NotifyIcon を使うため。WPF と併用できる。 -->
+    <UseWindowsForms>true</UseWindowsForms>
+
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>ZmkOverlay</AssemblyName>
+    <RootNamespace>ZmkOverlay.App</RootNamespace>
+
+    <!-- 単一 exe で配布するときも WPF は Trim できないので指定しない。 -->
+    <SelfContained>false</SelfContained>
+
+    <!--
+      WFAC010: WinForms は DPI 設定をマニフェストではなく API で行えと言うが、
+      このアプリの UI は WPF で、WPF はマニフェストの PerMonitorV2 を見る。
+      WinForms はトレイアイコンにしか使っていないので指摘は当たらない。
+    -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ZmkOverlay.Core\ZmkOverlay.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- レイアウトとキーマップは exe の隣に置く（ポータブル動作）。 -->
+    <None Include="..\..\data\**\*.json"
+          LinkBase="data"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

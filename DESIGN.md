@@ -1,0 +1,435 @@
+# ZMK Keymap Overlay — 設計メモ
+
+ZMK キーマップを Windows 画面上に半透過オーバーレイ表示するツール。
+
+## 次にやること
+
+日常使いできる状態まで来ている。残っているのは以下。
+
+| | 内容 | 前提 |
+|---|---|---|
+| 1 | **押下キーのハイライト** | 方式の決定が先。「押下キーのハイライト」の節を参照 |
+| 2 | **設定 UI** | 今は config.json とトレイメニュー。困っていなければ後回しでよい |
+| 3 | **会社 PC での確認（V4）** | 未署名 exe の実行可否と配置先。利用者の判断で保留中 |
+| 4 | 手動レイヤー経路の不安定さ | 未解決。「検証」の節を参照 |
+
+このリポジトリはまだ git 管理下に無い。続けるなら最初に `git init` しておくとよい。
+
+## 要件
+
+| # | 要件 | 備考 |
+|---|---|---|
+| R1 | 半透過オーバーレイの表示/非表示 | 最前面・クリックスルー・**フォーカスを奪わない** |
+| R2 | ホットキーでトグル | |
+| R3 | レイヤー連動 | ZMK 側から合図キーを送る方式（案A） |
+| R4 | **ユーザー権限のみで導入可能** | 管理者権限・インストーラ不要 |
+| R5 | 汎用設計 | 特定キーボードに依存しない |
+
+## 技術選定
+
+- **C# / .NET / WPF**
+- 配布は 2 形態をビルドできるようにする
+  - `self-contained + PublishSingleFile` — exe 1 個。ランタイム不要。約 150MB
+  - `framework-dependent` — 数 MB。.NET デスクトップランタイムが必要
+- 設定は **ポータブル優先**：exe と同じフォルダに `config.json` があればそれを、無ければ `%APPDATA%\ZmkOverlay\` を使う
+
+> WPF は `PublishTrimmed` 非対応。サイズ削減はできない。
+
+## アーキテクチャ
+
+```
+ZmkOverlay.Core/          ← UI 非依存。CLI とテストから叩ける
+├─ Dts/                   devicetree パーサ
+│   ├─ Preprocessor       #define / #include 展開
+│   ├─ DtsLexer
+│   └─ DtsParser          → ノードツリー
+├─ Model/
+│   ├─ PhysicalLayout     キーの物理位置
+│   ├─ Keymap / Layer / Binding
+├─ Bindings/
+│   ├─ BehaviorFormatter  &kp &mo &lt &mt &sk &trans &none &bt ...
+│   └─ KeycodeTable       ZMK キーコード → 表示ラベル + Windows VK
+└─ Config/
+
+ZmkOverlay.App/           ← WPF (net6.0-windows)
+├─ Overlay/OverlayWindow  半透過・クリックスルー
+├─ Render/KeymapCanvas    レイアウト描画
+├─ Interop/HotKeyService  RegisterHotKey + WM_HOTKEY
+├─ Interop/KeyStateWatcher GetAsyncKeyState ポーリング（リリース検出）
+├─ TrayIcon
+└─ Settings/
+
+ZmkOverlay.Tests/
+```
+
+## データモデル
+
+### 物理レイアウト
+
+ZMK 公式の physical layout（`key_physical_attrs`）に合わせる。単位は 1/100u。
+これを採用することで、ZMK 側の定義をそのまま読める＝汎用性が担保される。
+
+```
+&key_physical_attrs <w> <h> <x> <y> <r> <rx> <ry>
+```
+
+```json
+{
+  "name": "corne",
+  "keys": [
+    { "pos": 0, "x": 0,   "y": 40, "w": 100, "h": 100, "r": 0, "rx": 0, "ry": 0 }
+  ]
+}
+```
+
+取り込み経路（優先順）:
+1. ZMK の `*-layouts.dtsi` をパース
+2. JSON を手書き / keymap-drawer の layout から変換
+
+### キーマップ
+
+```json
+{
+  "layout": "corne",
+  "layers": [
+    { "index": 0, "name": "BASE", "bindings": ["&kp Q", "&kp W", "..."] }
+  ]
+}
+```
+
+### ラベル解決
+
+キーは **tap（中央・大）** と **hold（左上・小）** の 2 段で描く。
+
+| binding | hold | tap |
+|---|---|---|
+| `&kp Q` | | Q |
+| `&mo 1` | | L1 |
+| `&lt 2 SPACE` | L2 | Space |
+| `&hml LGUI A` | Win | A |
+| `&htp DEL F10` | Del | F10 |
+| `&trans` | | ▽ |
+| `&none` | | — |
+
+`KeycodeTable` は ZMK の `dt-bindings/zmk/keys.h` から**自動生成**する（手書きしない）。
+
+### 配列依存（JIS / US）
+
+Pyuron のキーマップは JIS 配列前提で、`#define JP_LPAR LS(N8)` のような定義を 20 個以上持つ。
+ZMK は US 位置の HID コードを送り、OS 側の配列で出力文字が決まるため、
+**同じ binding でも JIS と US で表示すべき文字が違う**。
+
+| binding | US 表示 | JIS 表示 |
+|---|---|---|
+| `LS(N8)` | `*` | `(` |
+| `LBKT` | `[` | `@` |
+| `LS(N2)` | `@` | `"` |
+
+`KeycodeTable` に配列ごとのシフト面テーブルを持ち、設定 `keyboardLayout: "jis" \| "us"` で切り替える。
+
+## オーバーレイ実装の要点
+
+WPF `Window`:
+```
+WindowStyle=None  AllowsTransparency=True  Background=Transparent
+Topmost=True  ShowInTaskbar=False  ResizeMode=NoResize
+```
+
+`SourceInitialized` で拡張ウィンドウスタイルを追加:
+
+| フラグ | 値 | 目的 |
+|---|---|---|
+| `WS_EX_TRANSPARENT` | 0x20 | クリックスルー |
+| `WS_EX_NOACTIVATE` | 0x08000000 | **フォーカスを奪わない（最重要）** |
+| `WS_EX_TOOLWINDOW` | 0x80 | Alt+Tab に出さない |
+
+- マルチモニタ: `MonitorFromPoint` でカーソルのあるモニタに表示
+- DPI: app.manifest で PerMonitorV2
+- `AllowsTransparency=True` が重い場合は `UpdateLayeredWindow` に差し替える（表示領域を必要最小限にすれば実用上問題ない見込み）
+
+## レイヤー連動（案A）
+
+### 考え方
+
+ZMK のレイヤー切替はキーボード内部で完結し、PC には何も届かない。
+そこでキーマップ側で、レイヤーに入るとき **F13〜F24**（通常どのアプリも使わない）を
+一緒に押しっぱなしにする。PC 側は `RegisterHotKey` でそれを受ける。
+
+`RegisterHotKey` は登録したキーを他アプリに届かせないので、
+**合図キーの検知と抑止を同時に satisfy する**。
+
+### なぜ低レベルフックを使わないか
+
+`SetWindowsHookEx(WH_KEYBOARD_LL)` は全キー入力を監視するため、
+EDR / DLP からキーロガーとして検知されうる。会社 PC で使う前提では避ける。
+`RegisterHotKey` は「特定キーを OS に予約する」公式 API で、行儀が良い。
+
+### PC 側
+
+```
+RegisterHotKey(hwnd, id, MOD_NOREPEAT, VK_F13 + n)   // レイヤー n ごとに登録
+WM_HOTKEY 受信          → レイヤー n を表示
+GetAsyncKeyState で監視 → 離されたら非表示
+```
+
+表示モードは設定で選べるようにする:
+- `hold` — 押している間だけ表示
+- `toggle` — 押すたびに ON/OFF
+
+### ZMK 側
+
+**前提**: Pyuron のレイヤー入口は 4 つとも `&lt`（layer-tap）である。
+
+```
+pos 34  &lt L_SYM  INT5     pos 35  &lt L_NAV SPACE
+pos 37  &lt L_FUNC ENTER    pos 38  &lt L_SYS  INT4
+```
+
+`&lt` はホールドが確定したときだけレイヤーに入るため、単純な `&mo` 置き換えでは足りない。
+合図キーは **hold-tap のホールド側**に仕込む。
+
+制約がひとつある。**ZMK の hold-tap は param1 を hold 側、param2 を tap 側へ
+固定で渡す実装**で、`#binding-cells` は必ず `<2>`、hold 側のビヘイビアは
+引数をちょうど 1 つ取る必要がある。したがって合図キーはマクロ側に焼き込み、
+レイヤー番号だけを引数で渡す。
+
+```c
+/ {
+    macros {
+        mo_sig_sym: mo_sig_sym {
+            compatible = "zmk,behavior-macro-one-param";
+            #binding-cells = <1>;
+            wait-ms = <0>;
+            tap-ms = <0>;
+            bindings
+                = <&macro_press &macro_param_1to1 &mo MACRO_PLACEHOLDER>
+                , <&macro_press &kp F13>
+                , <&macro_pause_for_release>
+                , <&macro_release &kp F13>
+                , <&macro_release &macro_param_1to1 &mo MACRO_PLACEHOLDER>;
+        };
+    };
+
+    behaviors {
+        lt_sym: lt_sym {
+            compatible = "zmk,behavior-hold-tap";
+            #binding-cells = <2>;
+            bindings = <&mo_sig_sym>, <&kp>;
+            flavor = "hold-preferred";
+            tapping-term-ms = <200>;
+        };
+    };
+};
+```
+
+使い方: `&lt L_SYM INT5` を `&lt_sym L_SYM INT5` に置き換える。引数の並びは変わらない。
+
+`wait-ms` / `tap-ms` を 0 にするのは必須。既定のままだとバインディングの間に
+100ms 入り、レイヤー有効化がそのぶん遅れる。`&mo` を合図キーより先に置くのも同じ理由。
+
+`flavor` と `tapping-term-ms` は組み込みの `&lt`（`hold-preferred` / 200ms）に合わせる。
+打鍵感を変えないため。
+
+適用手順は [zmk/README.md](zmk/README.md)。
+
+### 連動できないレイヤー
+
+**L4 MOUSE は原理的に検知できない。** このレイヤーは `zip_mouse_temp_layer`
+（input-processor）がトラックボール操作で自動 ON にするもので、キー押下を経由しないため
+マクロを差し込む場所が無い。案 B（ファームから HID 通知）でのみ取得可能。
+
+ただし L4 は 16/17/18 のクリック 3 つ以外すべて `&trans` で、L3 FUNC と同一配置。
+表示する価値が小さいため実害は無いと判断し、**L4 は非対応とする**。
+
+### レイヤー ⇔ 合図キー割り当て
+
+| レイヤー | 入口 | 合図キー |
+|---|---|---|
+| L1 SYM | pos 34 hold | F13 |
+| L2 NAV | pos 35 hold | F14 |
+| L3 FUNC | pos 37 hold | F15 |
+| L4 MOUSE | （自動） | — 非対応 |
+| L5 SYS | pos 38 hold | F16 |
+
+## 要検証（実機で確かめる）
+
+| # | 項目 | 落ちたときの代案 | 状態 |
+|---|---|---|---|
+| V1 | `RegisterHotKey` で予約したキーが `GetAsyncKeyState` で拾えるか | 拾えなければ hold モードを諦め toggle のみにする | ✅ 成立（合成入力） |
+| V2 | `AllowsTransparency` の描画コスト | `UpdateLayeredWindow` に差し替え | |
+| V3 | hold-tap の hold 側にマクロを置いて `&mo` を press/release できるか | レイヤーごとに個別マクロを定義する | ✅ 実機で成立 |
+| V4 | 会社 PC で未署名 exe が動くか / 配置場所 | framework-dependent 版、配置先の変更 | |
+
+### V1 の検証結果
+
+`tools/HotkeyProbe` で測定した。`SendInput` で F13 を 300ms 押しっぱなしにしたときの値。
+
+| 項目 | 登録なし（対照） | `RegisterHotKey` で登録 |
+|---|---|---|
+| WM_HOTKEY 受信回数 | 0 | 1 |
+| WM_HOTKEY 到達 | — | 1.1 ms |
+| `GetAsyncKeyState` 押下 | 3.1 ms | 1.1 ms |
+| `GetAsyncKeyState` 解放 | 330.1 ms | 318.5 ms |
+
+**予約したキーでも押下・解放の両方が観測できる。** hold モードは実装可能。
+
+分かったこと:
+
+- `MOD_NOREPEAT` は効いている。300ms 押しっぱなしでも WM_HOTKEY は 1 回だけ
+- 解放の検知遅延はポーリング間隔にほぼ等しい（測定値の 18ms は
+  `Thread.Sleep(1)` の実分解能 15ms 由来）。
+  **アプリ側は 15ms 間隔の `DispatcherTimer` で十分**で、それ以上細かくしても意味がない
+
+### 抑止の検証結果
+
+「登録したキーは他アプリに届かなくなる」も測った（`HotkeyProbe --suppress`）。
+自分自身をフォーカスのあるアプリ役にして、F13 を合成したときの受信数。
+
+| | 登録なし（対照） | `RegisterHotKey` で登録 |
+|---|---|---|
+| フォーカスのあるアプリの `KeyDown` | 1 | **0** |
+| WM_HOTKEY | 0 | 1 |
+
+**検知と抑止が RegisterHotKey ひとつで賄える**ことを確認した。
+合図キーが他アプリに漏れないので、抑止のために低レベルフックを足す必要はない。
+
+### 残る未確認
+
+上記はいずれも `SendInput` による合成入力での測定で、実機のキーとは経路が完全には同じでない。
+`HotkeyProbe --manual <キー>` で実キーでも確かめること。
+
+## ロードマップ
+
+| Phase | 内容 | 状態 |
+|---|---|---|
+| **0** | JSON 手書きレイアウト + 半透過オーバーレイ + ホットキー ON/OFF | ✅ 完了 |
+| **1** | `.keymap` パーサ（`#define` 展開 + `bindings` 解決） | ✅ 完了 |
+| **2** | レイヤー連動（案A） | ✅ 実機で動作確認済み |
+| 3 | 押下キーのハイライト、設定 UI、スタートアップ登録 | 自動起動のみ完了 |
+
+## 自動起動
+
+スタートアップフォルダにショートカットを置く。レジストリの Run キーでも
+同じことはできるが、「インストーラもレジストリ書き込みも無し」を通してきたので
+それに合わせた。ショートカットならただのファイルで、利用者が自分で消せる。
+
+`--config` で起動していたときは、その指定をショートカットの引数に引き継ぐ。
+引き継がないと、自動起動したときだけ別のキーマップが出ることになる。
+
+情報源はスタートアップフォルダの実体だけにしてある。設定ファイルにも
+状態を持つと、片方だけ消えたときにどちらが正しいか決められなくなる。
+
+## 押下キーのハイライト
+
+**未着手。このツールの前提と衝突するため、方式の決定が先。**
+
+押されたキーを光らせるには、全キー入力を観測する必要がある。手段は 3 つあり、
+risk と工数がまったく違う。
+
+| 方式 | 仕組み | EDR から見たとき | 工数 |
+|---|---|---|---|
+| 低レベルフック | `WH_KEYBOARD_LL` | **キーロガーとして検知されうる。当初却下した方式そのもの** | 小 |
+| Raw Input | `RegisterRawInputDevices` + `RIDEV_INPUTSINK` | フックを仕掛けず入力も横取りしないぶん穏当だが、全キーを取得できる性質は同じ | 中 |
+| キーボードから通知 | ZMK にモジュールを足し、キー位置を vendor HID で送る | **OS のキーボード入力を一切監視しない。特定 HID を読むだけ** | 大（ファーム開発） |
+
+会社 PC で使うという前提を崩さずに済むのは 3 番目だけ。
+この config は既に `CONFIG_ZMK_STUDIO=y` で vendor HID のパイプが通っているため、
+案 B（レイヤー状態の HID 通知）と同じ土俵で、まとめて実装できる。
+
+自宅でしか使わないなら Raw Input で十分。低レベルフックは選ばない。
+
+Phase 2 は実機で通った。ファームを焼いた状態で、キーボードとして正常に動作し、
+レイヤーに入るとオーバーレイの表示も追従することを確認済み。
+`wait-ms = <0>` を入れたことでレイヤー有効化の遅れも体感されなかった。
+ZMK 側の適用手順は [zmk/README.md](zmk/README.md)。
+
+## 表示状態の持ち方
+
+最初は「利用者が自分で出した（ピン留め）」と「レイヤーに追従して一時的に出た」を
+別物として扱い、ホットキーはピン留めだけを外す作りにしていた。
+その結果、ホットキーで消してもレイヤーキーで出てきてしまい、使い物にならなかった。
+
+作り直した現在の形は状態が 2 つだけ。
+
+| | 役割 |
+|---|---|
+| 有効 / 無効 | ホットキーで切り替えるマスタースイッチ。**無効なら何が起きても出さない** |
+| 見せ方 | 有効のときに常時出すか、L1 以上にいるときだけ出すか（`displayMode`） |
+
+| `displayMode` | 無効のとき | 有効のとき |
+|---|---|---|
+| `layersOnly`（既定） | 出ない | L1 以上にいるあいだだけ表示 |
+| `always` | 出ない | 常時表示。レイヤーに応じて中身が変わり、離すと L0 に戻る |
+
+表示するかどうかの判断は `OverlayController` の `AtRest()` と `BeginTransient()` の
+2 か所だけに置いてある。判断を散らすと「無効なのに出ている」状態が簡単に生まれる。
+
+### 気をつけた点
+
+- **初期状態は有効。** 無効から始めると、初回起動時にホットキーを押すまで
+  何も起きず、機能が存在しないように見える
+- **切り替えたことが分かる手段が要る。** `layersOnly` では無効にしても
+  画面上は何も変わらない（もともと出ていない）ため、
+  トレイのツールチップに状態を出し、切り替え時はバルーン通知も出す
+- `Ctrl+Alt+<番号>` で手で選んだレイヤーは、**キーボードのレイヤーを使った時点で忘れる**。
+  残したままにすると「L1 以上のときだけ表示」にしているのに出しっぱなしになり、
+  なぜそうなったのか画面から分からなくなる
+- レイヤー直接指定のホットキーは、表示中ではなく**有効なあいだ**押さえる。
+  表示に連動させると、素の状態では押さえておらず使えないうえ、
+  レイヤーキーを叩くたびに登録と解除を繰り返すことになる
+
+### 検証
+
+この規則はホットキー・レイヤー追従・ウィンドウの可視状態が噛み合った結果なので、
+単体テストでは囲えない。実アプリを合成キーで動かす
+[tools/verify-overlay.ps1](tools/verify-overlay.ps1) で 18 項目を確認している。
+
+**画面がロックされていると動かない。** 入力デスクトップが別になり、
+合成キーは `GetAsyncKeyState` には映るのに `WM_HOTKEY` が配送されないため、
+全項目が FAIL に見える。実際にこれで一度、あるはずのない回帰を疑った。
+スクリプトはロックを検出したら中断する。
+
+**外から合図キーの押下を観測することはできない。** アプリがホットキーとして
+押さえているあいだ、別プロセスの `GetAsyncKeyState` はそのキーを
+「離れている」と返す。アプリ自身は観測できる（hold モードが成立するのはそのため）。
+判定はウィンドウの可視状態だけで行うこと。キー状態を見る診断は嘘をつく。
+
+**残っている不安定さ。** 手動レイヤーの経路で、5 回に 1 回ほど
+「押しているあいだ表示される」が落ちることがある。原因は特定できていない。
+合図キーの押下を一度も観測できないまま猶予（`graceMs` = 150ms）を過ぎると
+畳む作りなので、状態の読み取りが一時的に失敗すると早すぎる非表示が起こりうる。
+次の押下で復帰するため実害は小さいが、未解決として残す。
+
+## Phase 1 — パーサ
+
+`.keymap` と `.dtsi` を直接読んで、手書き JSON と同じモデルに落とす。
+実データ（Pyuron）で必要だったものと、どう解いたか。
+
+| 課題 | 解き方 |
+|---|---|
+| `#define` の展開 | オブジェクト形・関数形の両方を再帰展開。`JP_PLUS` → `LS(SEMI)` のような多段も解く |
+| `LS()` / `LC()` / `LG()` / `LA()` の入れ子 | 値としては 1 セルに保ち、ラベル解決時に内側から畳む |
+| 位置集合マクロ（`#define KEYS_R 5 6 7`） | 値として展開する。ビヘイビアのプロパティに出るだけなので表示には使わない |
+| カスタム hold-tap（`hml` / `hmr` / `htp`） | 定義の `bindings = <hold>, <tap>` と `#binding-cells` から引数を割り振る |
+| `combos` | ノードごと読み、ラベルは同じフォーマッタで解決する |
+| JIS / US の差 | シフト面テーブルを配列ごとに持ち、設定で切り替える |
+
+### 読まないもの
+
+`#include <...>` のシステムヘッダは展開しない。ZMK のソースが手元にあるとは
+限らないため、キーコード名は `KeycodeTable` が内蔵表として持つ。
+`#if` 系の条件分岐も解釈せず、本文をそのまま残して警告に積む。
+
+### キーコード名は US 由来であること
+
+ZMK の `AT` は「Shift+2」を送るという意味で、`@` が出るとは限らない。
+JIS では `"` になる。したがって別名は**名前ではなく展開先で解決**する
+（`AT` → `LS(N2)` → JIS のシフト面 → `"`）。
+`EXCLAMATION` のように US と JIS で一致するものもあるが、それは結果論として扱う。
+
+### 解釈できなかったものの扱い
+
+表に無いキーコードや知らないビヘイビアは、**名前をそのまま表示する**。
+空白にすると「キーが無い」のか「解釈できなかった」のか画面から区別できない。
+構造レベルの問題（レイヤーのキー数が合わない等）は警告として集め、
+起動時にトレイから通知する。

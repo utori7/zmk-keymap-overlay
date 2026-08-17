@@ -1,0 +1,9 @@
+* text=auto
+
+# パッチは行末を変換させない。CRLF に直されると git apply が
+# 「corrupt patch」で拒否する。
+*.patch -text
+
+# ZMK 側に持っていくファイル。Zephyr のビルドは LF を前提にしている。
+*.dtsi   text eol=lf
+*.keymap text eol=lf

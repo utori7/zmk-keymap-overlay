@@ -1,0 +1,42 @@
+{
+  "_comment": "zmk-config を直接読む場合の設定例。exe の隣に config.json という名前で置く。パスは config.json からの相対でも絶対でもよい。",
+
+  "keyUnitPx": 56,
+  "opacity": 0.88,
+  "position": "BottomCenter",
+  "keyboardLayout": "jis",
+
+  "_displayMode": "Ctrl+Alt+K で有効にしているあいだの見せ方。layersOnly = L1 以上にいるあいだだけ表示 / always = 常時表示。無効のあいだはどちらでも表示されない。トレイメニューからも切り替えられる。",
+  "displayMode": "layersOnly",
+
+  "zmk": {
+    "keymapFile": "C:/Users/you/zmk-config-Pyuron/config/Pyuron.keymap",
+    "physicalLayoutFile": "C:/Users/you/zmk-config-Pyuron/config/boards/shields/Pyuron/Pyuron.dtsi",
+
+    "_labelOverrides": "キーコードの表示を差し替える。既定では INT4/INT5 は JIS のキー名（変換 / 無変換）で出る。",
+    "labelOverrides": {
+      "INT4": "かな",
+      "INT5": "英数"
+    },
+
+    "_layerNames": "レイヤー名はノード名から作る（default_layer → DEFAULT）。気に入らないものだけ上書きする。",
+    "layerNames": {
+      "0": "BASE"
+    },
+
+    "_signalKeys": "レイヤー連動の合図キー。zmk/README.md の手順で焼いたファームと対応させる。L4 は追従できないので指定しない。",
+    "signalKeys": {
+      "1": "F13",
+      "2": "F14",
+      "3": "F15",
+      "5": "F16"
+    }
+  },
+
+  "toggleHotkey": { "modifiers": ["Ctrl", "Alt"], "key": "K" },
+
+  "layerSync": {
+    "enabled": true,
+    "mode": "hold"
+  }
+}
