@@ -66,8 +66,8 @@ if (Get-Process LogonUI -ErrorAction SilentlyContinue) {
 }
 
 $root  = Split-Path $PSScriptRoot -Parent
-$app   = Join-Path $root 'src\ZmkOverlay.App\bin\Debug\net6.0-windows\ZmkOverlay.exe'
-$probe = Join-Path $root 'tools\HotkeyProbe\bin\Debug\net6.0-windows\HotkeyProbe.exe'
+$app   = Join-Path $root 'src\ZmkOverlay.App\bin\Debug\net10.0-windows\ZmkOverlay.exe'
+$probe = Join-Path $root 'tools\HotkeyProbe\bin\Debug\net10.0-windows\HotkeyProbe.exe'
 $fx    = Join-Path $root 'tests\fixtures\zmk-config\config'
 $cfg   = Join-Path $env:TEMP 'zmk-overlay-verify.json'
 $title = 'ZMK Keymap Overlay'

@@ -128,6 +128,9 @@ public sealed class AppConfig
     /// <summary>"jis" | "us"。ラベル解決に使う（Phase 1 以降）。</summary>
     public string KeyboardLayout { get; set; } = "jis";
 
+    /// <summary>"auto" | "ja" | "en"。auto は Windows の表示言語に従う。</summary>
+    public string Language { get; set; } = "auto";
+
     public HotkeySpec ToggleHotkey { get; set; } =
         new() { Modifiers = { "Ctrl", "Alt" }, Key = "K" };
 

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using ZmkOverlay.App.Text;
 using ZmkOverlay.Core.Config;
 using ZmkOverlay.Core.Model;
 
@@ -57,17 +58,15 @@ internal static class KeymapRenderer
     {
         string sync;
         if (!config.LayerSync.Enabled)
-            sync = "レイヤー連動: 無効";
+            sync = UiText.SyncOff;
         else if (layer.SignalKey is null)
-            sync = "このレイヤーは自動追従できません";
+            sync = UiText.LayerNotFollowable;
         else
-            sync = $"合図キー {layer.SignalKey}（{(config.LayerSync.IsHoldMode ? "押している間" : "トグル")}）";
+            sync = UiText.SignalKeyHint(layer.SignalKey, config.LayerSync.IsHoldMode);
 
-        var manual = config.EnableManualLayerKeys
-            ? "　Ctrl+Alt+レイヤー番号 で切替"
-            : "";
+        var manual = config.EnableManualLayerKeys ? UiText.ManualLayerHint : "";
 
-        return $"{config.ToggleHotkey} 有効/無効{manual}　│　{sync}";
+        return UiText.OverlayHint(config.ToggleHotkey.ToString(), manual, sync);
     }
 
     private static UIElement BuildTabs(Keymap keymap, int layerIndex, double unitPx)
@@ -233,7 +232,7 @@ internal static class KeymapRenderer
 
         return new TextBlock
         {
-            Text = "コンボ   " + string.Join("     ", parts),
+            Text = UiText.CombosPrefix + string.Join("     ", parts),
             Foreground = Theme.MutedText,
             FontSize = unitPx * 0.185,
             Margin = new Thickness(unitPx * 0.05, unitPx * 0.2, 0, 0),

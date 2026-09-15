@@ -1,5 +1,6 @@
 using ZmkOverlay.Core.Dts;
 using ZmkOverlay.Core.Model;
+using ZmkOverlay.Core.Text;
 
 namespace ZmkOverlay.Core.Zmk;
 
@@ -26,21 +27,22 @@ public sealed class BindingFormatter
         ["macro_pause_for_release"] = 0,
     };
 
-    private static readonly Dictionary<string, string> MouseButtons = new(StringComparer.OrdinalIgnoreCase)
+    // 表示言語で変わるラベルは (日本語, 英語) で持ち、引くときに選ぶ。
+    private static readonly Dictionary<string, (string Ja, string En)> MouseButtons = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["MB1"] = "M左", ["LCLK"] = "M左",
-        ["MB2"] = "M右", ["RCLK"] = "M右",
-        ["MB3"] = "M中", ["MCLK"] = "M中",
-        ["MB4"] = "M4", ["MB5"] = "M5",
+        ["MB1"] = ("M左", "LMB"), ["LCLK"] = ("M左", "LMB"),
+        ["MB2"] = ("M右", "RMB"), ["RCLK"] = ("M右", "RMB"),
+        ["MB3"] = ("M中", "MMB"), ["MCLK"] = ("M中", "MMB"),
+        ["MB4"] = ("M4", "M4"), ["MB5"] = ("M5", "M5"),
     };
 
-    private static readonly Dictionary<string, string> BluetoothActions = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, (string Ja, string En)> BluetoothActions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["BT_CLR"] = "BT消",
-        ["BT_CLR_ALL"] = "BT全消",
-        ["BT_NXT"] = "BT次",
-        ["BT_PRV"] = "BT前",
-        ["BT_DISC"] = "BT切断",
+        ["BT_CLR"] = ("BT消", "BT Clr"),
+        ["BT_CLR_ALL"] = ("BT全消", "BT ClrAll"),
+        ["BT_NXT"] = ("BT次", "BT Next"),
+        ["BT_PRV"] = ("BT前", "BT Prev"),
+        ["BT_DISC"] = ("BT切断", "BT Disc"),
     };
 
     private readonly IReadOnlyDictionary<string, BehaviorInfo> _behaviors;
@@ -114,13 +116,13 @@ public sealed class BindingFormatter
                 };
 
             case "msc":
-                return new KeyLabel { Tap = "スクロール", Kind = KeyKind.System };
+                return new KeyLabel { Tap = Strings.T("スクロール", "Scroll"), Kind = KeyKind.System };
 
             case "bt":
                 return new KeyLabel { Tap = Bluetooth(binding), Kind = KeyKind.System };
 
             case "out":
-                return new KeyLabel { Tap = "出力", Kind = KeyKind.System };
+                return new KeyLabel { Tap = Strings.T("出力", "Output"), Kind = KeyKind.System };
 
             case "bootloader":
                 return new KeyLabel { Tap = "BOOT", Kind = KeyKind.System };
@@ -250,6 +252,6 @@ public sealed class BindingFormatter
             : $"L{index}";
     }
 
-    private static string Lookup(IReadOnlyDictionary<string, string> table, string? key)
-        => key is not null && table.TryGetValue(key, out var value) ? value : key ?? "";
+    private static string Lookup(IReadOnlyDictionary<string, (string Ja, string En)> table, string? key)
+        => key is not null && table.TryGetValue(key, out var value) ? Strings.T(value.Ja, value.En) : key ?? "";
 }

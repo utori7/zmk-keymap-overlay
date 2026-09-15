@@ -1,4 +1,5 @@
 using ZmkOverlay.Core.Config;
+using ZmkOverlay.Core.Text;
 using ZmkOverlay.Core.Zmk;
 
 namespace ZmkOverlay.Core.Model;
@@ -39,14 +40,14 @@ public static class KeymapLoader
 
         var keymapPath = ConfigPaths.Resolve(configPath, zmk.KeymapFile!);
         if (!File.Exists(keymapPath))
-            throw new FileNotFoundException($"キーマップが見つかりません: {keymapPath}");
+            throw new FileNotFoundException(Strings.KeymapNotFound(keymapPath));
 
         string? layoutPath = null;
         if (!string.IsNullOrWhiteSpace(zmk.PhysicalLayoutFile))
         {
             layoutPath = ConfigPaths.Resolve(configPath, zmk.PhysicalLayoutFile);
             if (!File.Exists(layoutPath))
-                throw new FileNotFoundException($"物理レイアウトが見つかりません: {layoutPath}");
+                throw new FileNotFoundException(Strings.PhysicalLayoutNotFound(layoutPath));
         }
 
         var result = ZmkKeymapReader.Read(new ZmkReadOptions

@@ -13,7 +13,8 @@ ZMK キーマップを Windows 画面上に半透過オーバーレイ表示す�
 | 3 | **会社 PC での確認（V4）** | 未署名 exe の実行可否と配置先。利用者の判断で保留中 |
 | 4 | 手動レイヤー経路の不安定さ | 未解決。「検証」の節を参照 |
 
-このリポジトリはまだ git 管理下に無い。続けるなら最初に `git init` しておくとよい。
+一般公開に向けた UI と導入体験の作り直しを進めている（.NET 10 化・日英対応・見た目・トレイ・
+設定画面・初回セットアップ・キーマップ書き換えの生成）。
 
 ## 要件
 
@@ -27,7 +28,7 @@ ZMK キーマップを Windows 画面上に半透過オーバーレイ表示す�
 
 ## 技術選定
 
-- **C# / .NET / WPF**
+- **C# / .NET 10 / WPF**（理由は「.NET のバージョン」の節）
 - 配布は 2 形態をビルドできるようにする
   - `self-contained + PublishSingleFile` — exe 1 個。ランタイム不要。約 150MB
   - `framework-dependent` — 数 MB。.NET デスクトップランタイムが必要
@@ -51,7 +52,7 @@ ZmkOverlay.Core/          ← UI 非依存。CLI とテストから叩ける
 │   └─ KeycodeTable       ZMK キーコード → 表示ラベル + Windows VK
 └─ Config/
 
-ZmkOverlay.App/           ← WPF (net6.0-windows)
+ZmkOverlay.App/           ← WPF (net10.0-windows)
 ├─ Overlay/OverlayWindow  半透過・クリックスルー
 ├─ Render/KeymapCanvas    レイアウト描画
 ├─ Interop/HotKeyService  RegisterHotKey + WM_HOTKEY
@@ -399,6 +400,29 @@ ZMK 側の適用手順は [zmk/README.md](zmk/README.md)。
 合図キーの押下を一度も観測できないまま猶予（`graceMs` = 150ms）を過ぎると
 畳む作りなので、状態の読み取りが一時的に失敗すると早すぎる非表示が起こりうる。
 次の押下で復帰するため実害は小さいが、未解決として残す。
+
+## .NET のバージョン
+
+.NET 10（LTS、2028 年 11 月までサポート）。最初は .NET 6 で作ったが、サポートが終わっており、
+ランタイム同梱で配布すると修正の止まったランタイムを配ることになるため上げた。
+移行の前後で `--render` の出力はバイト単位で一致した。
+
+開発機には SDK をユーザーフォルダ（`%LOCALAPPDATA%\Microsoft\dotnet`）に入れてある。
+管理者権限を使わない方針に合わせたもので、システムの `dotnet` は .NET 6 のまま。
+
+## 表示言語
+
+日本語と英語を持つ。設定 `language`（`auto` / `ja` / `en`）で選び、`auto` は Windows の表示言語に従う。
+
+文言は `ZmkOverlay.Core/Text/Strings.cs`（Core と共通）と `ZmkOverlay.App/Text/UiText.cs`（UI だけ）に、
+日本語と英語を並べて持つ。.resx にしなかったのは、単一 exe に衛星アセンブリを抱えずに済むのと、
+2 言語を見比べながら直せるため。`T(ja, en)` は引数を 2 つ取るので、片方の書き忘れはコンパイルで分かる。
+
+キーのラベルにも言語で変わるものがある（`無変換` / `Muhenkan`、`M左` / `LMB` など）。
+`labelOverrides` は言語より優先する。
+
+テストは日本語の表示を前提に書いてあるので、テストアセンブリの初期化で日本語に固定している。
+言語を切り替えるテストは全体で 1 つの状態を触るため、並列実行から外してある。
 
 ## Phase 1 — パーサ
 

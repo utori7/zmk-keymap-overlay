@@ -1,5 +1,6 @@
 using ZmkOverlay.Core.Dts;
 using ZmkOverlay.Core.Model;
+using ZmkOverlay.Core.Text;
 
 namespace ZmkOverlay.Core.Zmk;
 
@@ -59,15 +60,12 @@ public static class ZmkKeymapReader
 
         var layout = ReadPhysicalLayout(layoutTree, warnings)
                      ?? ReadPhysicalLayout(keymapTree, warnings)
-                     ?? throw new InvalidDataException(
-                         "物理レイアウト（compatible = \"zmk,physical-layout\"）が見つかりません。" +
-                         "シールドの .dtsi を physicalLayoutFile に指定してください。");
+                     ?? throw new InvalidDataException(Strings.PhysicalLayoutMissing);
 
         var behaviors = ReadBehaviors(keymapTree, layoutTree);
 
         var keymapNode = Find(keymapTree, KeymapCompatible)
-                         ?? throw new InvalidDataException(
-                             "キーマップ（compatible = \"zmk,keymap\"）が見つかりません。");
+                         ?? throw new InvalidDataException(Strings.KeymapNodeMissing);
 
         var layerNodes = keymapNode.Children;
         var layerNames = BuildLayerNames(layerNodes, options.LayerNames);
@@ -84,16 +82,14 @@ public static class ZmkKeymapReader
 
             if (bindings is null)
             {
-                warnings.Add($"レイヤー '{node.Name}' に bindings がありません。");
+                warnings.Add(Strings.LayerHasNoBindings(node.Name));
                 continue;
             }
 
             var keys = ZmkBinding.Split(bindings.AllCells).Select(formatter.Format).ToList();
 
             if (keys.Count != layout.Keys.Count)
-                warnings.Add(
-                    $"レイヤー '{node.Name}' のキー数が {keys.Count} で、" +
-                    $"レイアウトの {layout.Keys.Count} と一致しません。");
+                warnings.Add(Strings.LayerKeyCountDiffers(node.Name, keys.Count, layout.Keys.Count));
 
             keymap.Layers.Add(new Layer
             {
@@ -135,7 +131,7 @@ public static class ZmkKeymapReader
         var keysProperty = node.Property("keys");
         if (keysProperty is null)
         {
-            warnings.Add("physical-layout に keys がありません。");
+            warnings.Add(Strings.PhysicalLayoutHasNoKeys);
             return null;
         }
 
@@ -156,7 +152,7 @@ public static class ZmkKeymapReader
 
             if (numbers.Count < 4)
             {
-                warnings.Add($"key_physical_attrs の値が {numbers.Count} 個しかありません。");
+                warnings.Add(Strings.KeyAttrsTooFew(numbers.Count));
                 numbers.Clear();
                 return;
             }

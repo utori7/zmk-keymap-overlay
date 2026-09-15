@@ -1,3 +1,5 @@
+using ZmkOverlay.Core.Text;
+
 namespace ZmkOverlay.Core.Zmk;
 
 public enum HostLayout
@@ -43,17 +45,27 @@ public static class KeycodeTable
         ["BSLH"] = new("\\", "|", "]", "}"),
         ["SEMI"] = new(";", ":", ";", "+"),
         ["SQT"] = new("'", "\"", ":", "*"),
-        ["GRAVE"] = new("`", "~", "半/全", "半/全"),
+        // JIS 面は JisKeyNames が先に拾う。
+        ["GRAVE"] = new("`", "~", "", ""),
         ["COMMA"] = new(",", "<", ",", "<"),
         ["DOT"] = new(".", ">", ".", ">"),
         ["SLASH"] = new("/", "?", "/", "?"),
 
         // JIS 固有キー。US 配列では何も出ない。
         ["INT1"] = new("", "", "\\", "_"),
-        ["INT2"] = new("", "", "かな", "かな"),
         ["INT3"] = new("", "", "¥", "|"),
-        ["INT4"] = new("", "", "変換", "変換"),
-        ["INT5"] = new("", "", "無変換", "無変換"),
+    };
+
+    /// <summary>
+    /// JIS 配列で、文字ではなく名前を出すキー。名前は表示言語で変える。
+    /// シフトしても同じ名前を出す。
+    /// </summary>
+    private static readonly Dictionary<string, (string Ja, string En)> JisKeyNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["GRAVE"] = ("半/全", "Zen/Han"),
+        ["INT2"] = ("かな", "Kana"),
+        ["INT4"] = ("変換", "Henkan"),
+        ["INT5"] = ("無変換", "Muhenkan"),
     };
 
     /// <summary>同じキーを指す別名。ZMK は 1 つのキーに複数の名前を持つ。</summary>
@@ -152,7 +164,13 @@ public static class KeycodeTable
         ["C_VOL_DN"] = "Vol−", ["C_VOLUME_DOWN"] = "Vol−",
         ["C_PP"] = "▶⏸", ["C_PLAY_PAUSE"] = "▶⏸",
         ["C_NEXT"] = "⏭", ["C_PREV"] = "⏮",
-        ["C_BRI_UP"] = "輝度+", ["C_BRI_DN"] = "輝度−",
+    };
+
+    /// <summary><see cref="NamedKeys"/> のうち、表示言語で名前が変わるもの。</summary>
+    private static readonly Dictionary<string, (string Ja, string En)> LocalizedNamedKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["C_BRI_UP"] = ("輝度+", "Bri+"),
+        ["C_BRI_DN"] = ("輝度−", "Bri−"),
     };
 
     /// <summary>修飾関数の接頭辞。<c>LS()</c> だけは配列のシフト面で解決するので別扱い。</summary>
@@ -198,6 +216,9 @@ public static class KeycodeTable
 
         var name = Synonyms.TryGetValue(keycode, out var canonical) ? canonical : keycode;
 
+        if (layout == HostLayout.Jis && JisKeyNames.TryGetValue(name, out var jisName))
+            return Strings.T(jisName.Ja, jisName.En);
+
         if (Faces.TryGetValue(name, out var face))
         {
             var text = layout == HostLayout.Jis
@@ -212,6 +233,12 @@ public static class KeycodeTable
 
         if (NamedKeys.TryGetValue(name, out var named))
             return shifted ? "⇧" + named : named;
+
+        if (LocalizedNamedKeys.TryGetValue(name, out var localized))
+        {
+            var text = Strings.T(localized.Ja, localized.En);
+            return shifted ? "⇧" + text : text;
+        }
 
         // 英字と数字。ZMK では A や N1 以外に素の 1 桁も来ない想定だが念のため。
         if (name.Length == 1 && char.IsLetterOrDigit(name[0]))

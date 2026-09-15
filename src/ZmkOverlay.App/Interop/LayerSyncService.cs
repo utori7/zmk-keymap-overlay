@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Windows.Threading;
 using ZmkOverlay.App.Overlay;
+using ZmkOverlay.App.Text;
 using ZmkOverlay.Core.Config;
 
 namespace ZmkOverlay.App.Interop;
@@ -60,7 +61,7 @@ internal sealed class LayerSyncService : IDisposable
         {
             if (!HotKeyService.TryParseVirtualKey(signalKey, out var vk))
             {
-                failures.Add($"L{layerId}: キー '{signalKey}' を解釈できません");
+                failures.Add(UiText.SignalKeyUnrecognized(layerId, signalKey));
                 continue;
             }
 

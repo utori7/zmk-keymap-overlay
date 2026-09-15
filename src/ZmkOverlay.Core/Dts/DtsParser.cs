@@ -1,10 +1,11 @@
 using System.Text;
+using ZmkOverlay.Core.Text;
 
 namespace ZmkOverlay.Core.Dts;
 
 public sealed class DtsParseException : Exception
 {
-    public DtsParseException(string message, int line) : base($"{line} 行目: {message}")
+    public DtsParseException(string message, int line) : base(Strings.AtLine(line, message))
         => Line = line;
 
     public int Line { get; }
@@ -140,7 +141,7 @@ public sealed class DtsParser
             SkipTrivia();
         }
 
-        if (AtEnd) throw new DtsParseException($"'{name}' の後で入力が尽きました。", _line);
+        if (AtEnd) throw new DtsParseException(Strings.UnexpectedEndAfter(name), _line);
 
         switch (Current)
         {
@@ -164,7 +165,7 @@ public sealed class DtsParser
                 return;
 
             default:
-                throw new DtsParseException($"'{name}' の後に予期しない文字 '{Current}' があります。", _line);
+                throw new DtsParseException(Strings.UnexpectedCharAfter(name, Current), _line);
         }
     }
 
@@ -175,7 +176,7 @@ public sealed class DtsParser
         while (true)
         {
             SkipTrivia();
-            if (AtEnd) throw new DtsParseException($"プロパティ '{name}' が閉じていません。", _line);
+            if (AtEnd) throw new DtsParseException(Strings.PropertyNotClosed(name), _line);
 
             switch (Current)
             {
@@ -204,8 +205,7 @@ public sealed class DtsParser
                         break;
                     }
 
-                    throw new DtsParseException(
-                        $"プロパティ '{name}' に予期しない文字 '{Current}' があります。", _line);
+                    throw new DtsParseException(Strings.UnexpectedCharInProperty(name, Current), _line);
             }
 
             SkipTrivia();
@@ -230,7 +230,7 @@ public sealed class DtsParser
         while (true)
         {
             SkipTrivia();
-            if (AtEnd) throw new DtsParseException("'<' が閉じていません。", _line);
+            if (AtEnd) throw new DtsParseException(Strings.NotClosed('<'), _line);
 
             if (Current == '>')
             {
@@ -350,7 +350,7 @@ public sealed class DtsParser
             Advance();
         }
 
-        throw new DtsParseException($"'{open}' が閉じていません。", _line);
+        throw new DtsParseException(Strings.NotClosed(open), _line);
     }
 
     private void SkipBalanced(char open, char close) => ReadBalanced(open, close);
@@ -371,8 +371,7 @@ public sealed class DtsParser
         SkipTrivia();
 
         if (AtEnd || Current != c)
-            throw new DtsParseException(
-                $"'{c}' が必要ですが {(AtEnd ? "入力の終わり" : $"'{Current}'")} でした。", _line);
+            throw new DtsParseException(Strings.Expected(c, AtEnd ? null : Current), _line);
 
         Advance();
     }

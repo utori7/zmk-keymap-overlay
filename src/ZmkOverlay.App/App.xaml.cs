@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Windows;
 using ZmkOverlay.App.Interop;
 using ZmkOverlay.App.Overlay;
+using ZmkOverlay.App.Text;
 using ZmkOverlay.Core.Config;
 using ZmkOverlay.Core.Model;
+using ZmkOverlay.Core.Text;
 
 namespace ZmkOverlay.App;
 
@@ -26,7 +28,7 @@ public partial class App : Application
 
         DispatcherUnhandledException += (_, args) =>
         {
-            ShowError("予期しないエラー", args.Exception);
+            ShowError(UiText.UnexpectedError, args.Exception);
             args.Handled = true;
         };
 
@@ -45,7 +47,7 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            ShowError("起動できませんでした", ex);
+            ShowError(UiText.StartupFailed, ex);
             Shutdown(1);
         }
     }
@@ -170,6 +172,9 @@ public partial class App : Application
 
         _configPath = path;
 
+        // キーのラベルも表示言語で変わるので、キーマップを読むより先に決める。
+        Strings.Language = Strings.FromSetting(config.Language);
+
         var loaded = KeymapLoader.Load(config, path);
 
         // ZMK のソースを読むと、解釈できなかった箇所が警告として返る。
@@ -186,7 +191,7 @@ public partial class App : Application
         if (_pendingWarnings.Count == 0) return;
 
         _tray?.Notify(
-            $"キーマップの読み込みで {_pendingWarnings.Count} 件の警告",
+            UiText.KeymapWarnings(_pendingWarnings.Count),
             string.Join("\n", _pendingWarnings.Take(5)),
             System.Windows.Forms.ToolTipIcon.Warning);
 
@@ -212,11 +217,11 @@ public partial class App : Application
             ApplyEnabledState(_overlay.IsEnabled, notify: false);
 
             if (_pendingWarnings.Count > 0) ReportWarnings();
-            else _tray?.Notify("再読み込みしました", _configPath);
+            else _tray?.Notify(UiText.Reloaded, _configPath);
         }
         catch (Exception ex)
         {
-            ShowError("再読み込みに失敗しました", ex);
+            ShowError(UiText.ReloadFailed, ex);
         }
     }
 
@@ -238,7 +243,7 @@ public partial class App : Application
         catch (Exception ex)
         {
             // 保存できなくても今の動作は変えたままにする。次回起動で戻るだけ。
-            _tray?.Notify("設定を保存できません", ex.Message,
+            _tray?.Notify(UiText.CannotSaveSettings, ex.Message,
                 System.Windows.Forms.ToolTipIcon.Warning);
         }
     }
@@ -256,12 +261,12 @@ public partial class App : Application
             else StartupEntry.Disable();
 
             _tray?.Notify(
-                enable ? "サインイン時に起動します" : "サインイン時の起動をやめました",
+                enable ? UiText.RunAtLoginOn : UiText.RunAtLoginOff,
                 StartupEntry.FolderPath);
         }
         catch (Exception ex)
         {
-            _tray?.Notify("自動起動を設定できません", ex.Message,
+            _tray?.Notify(UiText.CannotSetRunAtLogin, ex.Message,
                 System.Windows.Forms.ToolTipIcon.Warning);
         }
         finally
@@ -278,7 +283,7 @@ public partial class App : Application
         if (_toggleRegistration is null)
         {
             // ここが取れないとアプリを呼び出す手段がトレイだけになるので、必ず知らせる。
-            _tray?.Notify("ホットキーを登録できません", error ?? "原因不明",
+            _tray?.Notify(UiText.CannotRegisterHotkey, error ?? UiText.UnknownCause,
                 System.Windows.Forms.ToolTipIcon.Warning);
         }
     }
@@ -292,7 +297,7 @@ public partial class App : Application
 
         // 合図キーが取れないレイヤーは黙って追従しなくなるだけなので、
         // 気づけるように知らせる。他のレイヤーは動き続ける。
-        _tray?.Notify("追従できないレイヤーがあります", string.Join("\n", failures),
+        _tray?.Notify(UiText.LayersNotFollowed, string.Join("\n", failures),
             System.Windows.Forms.ToolTipIcon.Warning);
     }
 
@@ -346,7 +351,7 @@ public partial class App : Application
         }
 
         MessageBox.Show(
-            $"{ex.Message}{Environment.NewLine}{Environment.NewLine}詳細: {logPath}",
+            $"{ex.Message}{Environment.NewLine}{Environment.NewLine}{UiText.ErrorDetails(logPath)}",
             $"ZMK Keymap Overlay — {title}",
             MessageBoxButton.OK, MessageBoxImage.Warning);
     }

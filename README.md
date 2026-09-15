@@ -41,6 +41,8 @@ ZmkOverlay.exe --startup status
 
 ## 動かす
 
+開発には .NET 10 SDK が要る。
+
 ```bash
 dotnet run --project src/ZmkOverlay.App
 ```
@@ -90,6 +92,7 @@ WPF は `PublishTrimmed` に対応しないため、同梱版のサイズは削�
 | `position` | `BottomCenter` | `BottomCenter` / `Center` / `TopCenter` |
 | `margin` | `48` | 画面端からの余白 |
 | `keyboardLayout` | `jis` | ラベル解決に使う配列（Phase 1 以降） |
+| `language` | `auto` | 表示言語。`ja` / `en`。`auto` は Windows の表示言語に従う |
 | `toggleHotkey` | `Ctrl+Alt+K` | 表示切替 |
 | `enableManualLayerKeys` | `true` | 表示中に `Ctrl+Alt+<番号>` でレイヤー切替 |
 | `displayMode` | `layersOnly` | **有効のときの見せ方。下記** |

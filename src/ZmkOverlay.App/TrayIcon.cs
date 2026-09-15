@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.Windows.Forms;
+using ZmkOverlay.App.Text;
 
 namespace ZmkOverlay.App;
 
@@ -35,34 +36,34 @@ public sealed class TrayIcon : IDisposable
 
         // 押すと何が起きるかを書く。「有効 / 無効」だと、いまどちらなのか、
         // 押したらどうなるのかが読み取れない。
-        _toggle = new ToolStripMenuItem("無効にする", null, (_, _) => toggle());
+        _toggle = new ToolStripMenuItem(UiText.Disable, null, (_, _) => toggle());
 
         // 2 つ並べて、選ばれていない側が何なのかも見えるようにする。
         // チェックボックス 1 個だと、外したときの挙動がどこにも書かれない。
-        _layersOnly = new ToolStripMenuItem("L1 以上のレイヤーのときだけ表示")
+        _layersOnly = new ToolStripMenuItem(UiText.ModeLayersOnly)
         {
             Checked = !alwaysVisible,
-            ToolTipText = "普段は出さず、レイヤーキーを押しているあいだだけ表示します。",
+            ToolTipText = UiText.ModeLayersOnlyTip,
         };
 
-        _always = new ToolStripMenuItem("常に表示")
+        _always = new ToolStripMenuItem(UiText.ModeAlways)
         {
             Checked = alwaysVisible,
-            ToolTipText = "有効なあいだ出しっぱなしにし、レイヤーに応じて中身を切り替えます。",
+            ToolTipText = UiText.ModeAlwaysTip,
         };
 
         _layersOnly.Click += (_, _) => ChooseMode(always: false);
         _always.Click += (_, _) => ChooseMode(always: true);
 
-        var mode = new ToolStripMenuItem("表示の仕方");
+        var mode = new ToolStripMenuItem(UiText.DisplayMode);
         mode.DropDownItems.Add(_layersOnly);
         mode.DropDownItems.Add(_always);
 
-        _runAtLogin = new ToolStripMenuItem("Windows のサインイン時に起動する")
+        _runAtLogin = new ToolStripMenuItem(UiText.RunAtLogin)
         {
             CheckOnClick = true,
             Checked = runAtLogin,
-            ToolTipText = "スタートアップフォルダにショートカットを置きます。",
+            ToolTipText = UiText.RunAtLoginTip,
         };
 
         // 失敗して元に戻すときにも CheckedChanged が飛ぶので、往復しないよう抑制する。
@@ -78,8 +79,8 @@ public sealed class TrayIcon : IDisposable
         menu.Items.Add(mode);
         menu.Items.Add(_runAtLogin);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("設定とキーマップを再読み込み", null, (_, _) => reload());
-        menu.Items.Add("終了", null, (_, _) => exit());
+        menu.Items.Add(UiText.ReloadAll, null, (_, _) => reload());
+        menu.Items.Add(UiText.Exit, null, (_, _) => exit());
 
         _icon = new NotifyIcon
         {
@@ -109,11 +110,11 @@ public sealed class TrayIcon : IDisposable
     /// </summary>
     public void ShowState(bool enabled, bool notify)
     {
-        _toggle.Text = enabled ? "無効にする" : "有効にする";
-        _icon.Text = $"{BaseTitle} — {(enabled ? "有効" : "無効")}";
+        _toggle.Text = enabled ? UiText.Disable : UiText.Enable;
+        _icon.Text = $"{BaseTitle} — {(enabled ? UiText.StateEnabled : UiText.StateDisabled)}";
 
         if (notify)
-            Notify(BaseTitle, enabled ? "オーバーレイを有効にしました" : "オーバーレイを無効にしました");
+            Notify(BaseTitle, enabled ? UiText.OverlayEnabled : UiText.OverlayDisabled);
     }
 
     /// <summary>登録に失敗したときなど、実際の状態に戻す。</summary>

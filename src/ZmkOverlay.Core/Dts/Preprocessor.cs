@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using ZmkOverlay.Core.Text;
 
 namespace ZmkOverlay.Core.Dts;
 
@@ -83,7 +84,7 @@ public sealed class Preprocessor
     {
         if (!_includeStack.Add(path))
         {
-            _warnings.Add($"include が循環しています: {path}");
+            _warnings.Add(Strings.IncludeCycle(path));
             return "";
         }
 
@@ -125,7 +126,7 @@ public sealed class Preprocessor
                         // 条件分岐は解釈しない。ZMK のキーマップでは
                         // 機能の有無を切り替える用途がほとんどで、
                         // 本文を残しておくほうが読める結果になる。
-                        _warnings.Add($"#{directive} は解釈しません（本文はそのまま残します）");
+                        _warnings.Add(Strings.DirectiveIgnored(directive));
                         break;
                 }
 
@@ -154,7 +155,7 @@ public sealed class Preprocessor
 
         if (!File.Exists(full))
         {
-            _warnings.Add($"include を解決できません: {name}");
+            _warnings.Add(Strings.IncludeNotFound(name));
             return "";
         }
 
@@ -252,7 +253,7 @@ public sealed class Preprocessor
     {
         if (depth > MaxExpansionDepth)
         {
-            _warnings.Add("マクロ展開が深すぎます。循環している可能性があります。");
+            _warnings.Add(Strings.MacroTooDeep);
             return text;
         }
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Windows.Input;
 using System.Windows.Interop;
+using ZmkOverlay.App.Text;
 using ZmkOverlay.Core.Config;
 
 namespace ZmkOverlay.App.Interop;
@@ -51,7 +52,7 @@ public sealed class HotKeyService : IDisposable
 
         if (!TryParseVirtualKey(spec.Key, out var vk))
         {
-            error = $"キー '{spec.Key}' を解釈できません。";
+            error = UiText.UnrecognizedKey(spec.Key);
             return null;
         }
 
@@ -65,7 +66,7 @@ public sealed class HotKeyService : IDisposable
                 case "shift": modifiers |= NativeMethods.MOD_SHIFT; break;
                 case "win" or "windows": modifiers |= NativeMethods.MOD_WIN; break;
                 default:
-                    error = $"修飾キー '{m}' を解釈できません。";
+                    error = UiText.UnrecognizedModifier(m);
                     return null;
             }
         }
@@ -73,7 +74,7 @@ public sealed class HotKeyService : IDisposable
         var id = _nextId++;
         if (!NativeMethods.RegisterHotKey(_source.Handle, id, modifiers, (uint)vk))
         {
-            error = $"{spec} は登録できませんでした。他のアプリが使用している可能性があります。";
+            error = UiText.HotkeyTaken(spec.ToString());
             return null;
         }
 

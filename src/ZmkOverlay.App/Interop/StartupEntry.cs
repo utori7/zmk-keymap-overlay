@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using ZmkOverlay.App.Text;
 
 namespace ZmkOverlay.App.Interop;
 
@@ -32,21 +33,20 @@ internal static class StartupEntry
     public static void Enable(string? configPath)
     {
         var exePath = Environment.ProcessPath
-                      ?? throw new InvalidOperationException("実行ファイルの場所を特定できません。");
+                      ?? throw new InvalidOperationException(UiText.ExePathUnknown);
 
         var shellType = Type.GetTypeFromProgID("WScript.Shell")
-                        ?? throw new InvalidOperationException(
-                            "Windows Script Host を利用できないため、ショートカットを作成できません。");
+                        ?? throw new InvalidOperationException(UiText.ScriptHostUnavailable);
 
         dynamic shell = Activator.CreateInstance(shellType)
-                        ?? throw new InvalidOperationException("WScript.Shell を生成できません。");
+                        ?? throw new InvalidOperationException(UiText.ScriptHostCreateFailed);
 
         dynamic link = shell.CreateShortcut(ShortcutPath);
 
         link.TargetPath = exePath;
         link.Arguments = configPath is null ? "" : $"--config \"{configPath}\"";
         link.WorkingDirectory = Path.GetDirectoryName(exePath) ?? "";
-        link.Description = "ZMK のキーマップを画面に重ねて表示します";
+        link.Description = UiText.ShortcutDescription;
         link.Save();
     }
 
