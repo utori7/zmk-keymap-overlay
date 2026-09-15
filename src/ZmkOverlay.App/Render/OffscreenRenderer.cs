@@ -3,8 +3,6 @@ using System.IO;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using ZmkOverlay.Core.Config;
-using ZmkOverlay.Core.Model;
 
 namespace ZmkOverlay.App.Render;
 
@@ -12,18 +10,15 @@ namespace ZmkOverlay.App.Render;
 /// オーバーレイを画面に出さずに PNG へ書き出す。
 ///
 /// 常駐アプリの見た目はホットキーを押さないと確認できず、レビューにも残せない。
-/// 表示用と同じ <see cref="KeymapRenderer.BuildPanel"/> を通すので、
+/// 表示用と同じ <see cref="KeymapRenderer.BuildPanels"/> の結果を受け取るので、
 /// ここで見た絵と実際のオーバーレイは一致する。
 /// </summary>
 internal static class OffscreenRenderer
 {
     private const double Dpi = 96.0;
 
-    public static void RenderToPng(
-        AppConfig config, PhysicalLayout layout, Keymap keymap, int layerIndex, string path)
+    public static void RenderToPng(FrameworkElement panel, string path)
     {
-        var panel = KeymapRenderer.BuildPanel(config, layout, keymap, layerIndex);
-
         panel.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
         panel.Arrange(new Rect(panel.DesiredSize));
         panel.UpdateLayout();

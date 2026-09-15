@@ -63,13 +63,14 @@ public partial class App : Application
 
         var outputDir = index + 1 < args.Length ? args[index + 1] : "render-out";
         var (config, layout, keymap) = LoadAll();
+        var panels = Render.KeymapRenderer.BuildPanels(config, layout, keymap);
 
         for (var slot = 0; slot < keymap.Layers.Count; slot++)
         {
             var layer = keymap.Layers[slot];
             var file = System.IO.Path.Combine(outputDir, $"layer{layer.Index}.png");
 
-            Render.OffscreenRenderer.RenderToPng(config, layout, keymap, slot, file);
+            Render.OffscreenRenderer.RenderToPng(panels[slot], file);
             Console.WriteLine(file);
         }
 

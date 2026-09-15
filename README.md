@@ -87,9 +87,9 @@ WPF は `PublishTrimmed` に対応しないため、同梱版のサイズは削�
 | `zmk.physicalLayoutFile` | なし | 物理レイアウトを持つ `.dtsi` |
 | `layoutFile` | `data/layouts/pyuron.json` | 手書き物理レイアウト。config.json からの相対パス |
 | `keymapFile` | `data/keymaps/pyuron.json` | 手書きキーマップ |
-| `keyUnitPx` | `56` | キー 1u のピクセル数。全体の大きさはこれで決まる |
+| `keyUnitPx` | `44` | キー 1u のピクセル数。全体の大きさはこれで決まる |
 | `opacity` | `0.88` | オーバーレイの不透明度 |
-| `position` | `BottomCenter` | `BottomCenter` / `Center` / `TopCenter` |
+| `position` | `BottomCenter` | `BottomCenter` / `BottomLeft` / `BottomRight` / `TopCenter` / `TopLeft` / `TopRight` / `Center` |
 | `margin` | `48` | 画面端からの余白 |
 | `keyboardLayout` | `jis` | ラベル解決に使う配列（Phase 1 以降） |
 | `language` | `auto` | 表示言語。`ja` / `en`。`auto` は Windows の表示言語に従う |

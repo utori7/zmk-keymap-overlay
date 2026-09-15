@@ -100,8 +100,11 @@ public sealed class AppConfig
     /// <summary>ZMK のソースから直接読む場合の設定。</summary>
     public ZmkSourceConfig Zmk { get; set; } = new();
 
-    /// <summary>キー 1u を何ピクセルで描くか。96dpi 基準。</summary>
-    public double KeyUnitPx { get; set; } = 56;
+    /// <summary>
+    /// キー 1u を何ピクセルで描くか。96dpi 基準。
+    /// タイピング中に視界を塞がない大きさを既定にしてある。
+    /// </summary>
+    public double KeyUnitPx { get; set; } = 44;
 
     /// <summary>オーバーレイ全体の不透明度。</summary>
     public double Opacity { get; set; } = 0.88;
@@ -119,7 +122,9 @@ public sealed class AppConfig
     public bool IsAlwaysVisible =>
         string.Equals(DisplayMode, "always", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>"BottomCenter" | "Center" | "TopCenter"</summary>
+    /// <summary>
+    /// "BottomCenter" | "BottomLeft" | "BottomRight" | "TopCenter" | "TopLeft" | "TopRight" | "Center"
+    /// </summary>
     public string Position { get; set; } = "BottomCenter";
 
     /// <summary>画面端からの余白（ピクセル）。Center では無視される。</summary>

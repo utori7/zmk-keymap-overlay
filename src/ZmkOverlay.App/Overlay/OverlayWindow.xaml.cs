@@ -28,6 +28,9 @@ public partial class OverlayWindow : Window
     /// <summary>表示中のレイヤーの、リスト上の位置。ZMK のレイヤー番号とは別物。</summary>
     private int _slot;
 
+    /// <summary>全レイヤーぶんの作り置き。寸法は揃えてある。</summary>
+    private IReadOnlyList<FrameworkElement> _panels = Array.Empty<FrameworkElement>();
+
     public OverlayWindow(AppConfig config, PhysicalLayout layout, Keymap keymap)
     {
         InitializeComponent();
@@ -105,10 +108,10 @@ public partial class OverlayWindow : Window
         if (slot != _slot)
         {
             _slot = slot;
-            Rebuild();
 
-            // 描き直すと寸法が変わるので、出したまま切り替えたときは置き直す。
-            if (IsVisible) Reposition();
+            // パネルは全レイヤーで同じ寸法に揃えてあるので、差し替えるだけでよい。
+            // 大きさが変わらないので置き直しも要らず、表示中に切り替えても板が動かない。
+            Body.Content = _panels[slot];
         }
 
         return true;
@@ -138,7 +141,8 @@ public partial class OverlayWindow : Window
 
     private void Rebuild()
     {
-        Body.Content = KeymapRenderer.BuildPanel(_config, _layout, _keymap, _slot);
+        _panels = KeymapRenderer.BuildPanels(_config, _layout, _keymap);
+        Body.Content = _panels[_slot];
         UpdateLayout();
     }
 
@@ -161,13 +165,17 @@ public partial class OverlayWindow : Window
         var dpiScale = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         var margin = (int)Math.Round(_config.Margin * dpiScale);
 
-        var x = work.Left + (work.Width - rect.Width) / 2;
-        var y = _config.Position switch
-        {
-            "TopCenter" => work.Top + margin,
-            "Center" => work.Top + (work.Height - rect.Height) / 2,
-            _ => work.Bottom - rect.Height - margin,
-        };
+        // "BottomCenter" / "TopLeft" のように、縦位置 + 横位置で書く。"Center" だけは画面中央。
+        var position = _config.Position ?? "";
+        const StringComparison ignoreCase = StringComparison.OrdinalIgnoreCase;
+
+        var x = position.EndsWith("Left", ignoreCase) ? work.Left + margin
+              : position.EndsWith("Right", ignoreCase) ? work.Right - rect.Width - margin
+              : work.Left + (work.Width - rect.Width) / 2;
+
+        var y = position.StartsWith("Top", ignoreCase) ? work.Top + margin
+              : position.Equals("Center", ignoreCase) ? work.Top + (work.Height - rect.Height) / 2
+              : work.Bottom - rect.Height - margin;
 
         // 画面より大きい場合でも左上が切れないようにする。
         x = Math.Max(work.Left, x);

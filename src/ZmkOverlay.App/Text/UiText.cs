@@ -88,17 +88,10 @@ internal static class UiText
 
     // ---- オーバーレイ ----
 
-    public static string SyncOff => T("レイヤー連動: 無効", "Layer sync: off");
-    public static string LayerNotFollowable => T("このレイヤーは自動追従できません", "This layer cannot be followed automatically");
+    public static string HintToggle(string toggleHotkey) => T($"{toggleHotkey} オフ", $"{toggleHotkey} off");
 
-    public static string SignalKeyHint(string key, bool hold) =>
-        T($"合図キー {key}（{(hold ? "押している間" : "トグル")}）",
-          $"Signal key {key} ({(hold ? "while held" : "toggle")})");
+    /// <summary><paramref name="range"/> は "0–5" のようなレイヤー番号の範囲。</summary>
+    public static string HintLayers(string range) => T($"Ctrl+Alt+{range} レイヤー", $"Ctrl+Alt+{range} layers");
 
-    public static string ManualLayerHint => T("　Ctrl+Alt+レイヤー番号 で切替", "   Ctrl+Alt+layer number to switch");
-
-    public static string OverlayHint(string toggleHotkey, string manual, string sync) =>
-        T($"{toggleHotkey} 有効/無効{manual}　│　{sync}", $"{toggleHotkey} on/off{manual}   │   {sync}");
-
-    public static string CombosPrefix => T("コンボ   ", "Combos   ");
+    public static string Combos => T("コンボ", "Combos");
 }

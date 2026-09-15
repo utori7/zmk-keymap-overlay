@@ -1,3 +1,4 @@
+using System.Windows;
 using System.Windows.Media;
 using ZmkOverlay.Core.Model;
 
@@ -5,6 +6,9 @@ namespace ZmkOverlay.App.Render;
 
 /// <summary>
 /// オーバーレイの配色。半透過の板の上に乗るので、背景側は必ずアルファを持たせる。
+///
+/// タイピング中に視界の端に出るものなので、彩度は抑えてある。
+/// キーの種類の違いは、色味をわずかに付けた背景と文字色だけで表す。
 /// </summary>
 internal static class Theme
 {
@@ -15,29 +19,44 @@ internal static class Theme
         return brush;
     }
 
-    public static readonly Brush Panel = Frozen("#F21A1D23");
-    public static readonly Brush PanelBorder = Frozen("#3DFFFFFF");
+    /// <summary>日本語のラベルは Segoe UI に無いので、同系統の Yu Gothic UI で補う。</summary>
+    public static readonly FontFamily Font = new("Segoe UI, Yu Gothic UI");
 
-    public static readonly Brush HeaderText = Frozen("#FFE8EAF0");
-    public static readonly Brush MutedText = Frozen("#8CE8EAF0");
-    public static readonly Brush FaintText = Frozen("#59E8EAF0");
+    /// <summary>文字幅の実測に使う。描画と同じ書体でないと測った値が合わない。</summary>
+    public static readonly Typeface Typeface =
+        new(Font, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
 
-    public static readonly Brush TabActiveBg = Frozen("#FF3D6EE8");
+    public static readonly Brush Panel = Frozen("#EB15171C");
+    public static readonly Brush PanelBorder = Frozen("#1FFFFFFF");
+
+    public static readonly Brush TabActiveBg = Frozen("#FF3F6BC9");
     public static readonly Brush TabActiveText = Frozen("#FFFFFFFF");
-    public static readonly Brush TabIdleBg = Frozen("#1FFFFFFF");
-    public static readonly Brush TabIdleText = Frozen("#A6E8EAF0");
-    public static readonly Brush TabUnavailableText = Frozen("#59E8EAF0");
+    public static readonly Brush TabIdleText = Frozen("#99E6E8EE");
+    public static readonly Brush TabUnavailableText = Frozen("#4DE6E8EE");
+    public static readonly Brush TabUnavailableOutline = Frozen("#38E6E8EE");
 
-    public static readonly Brush KeyBorder = Frozen("#33FFFFFF");
-    public static readonly Brush HoldText = Frozen("#B3FFD9A6");
+    public static readonly Brush HintText = Frozen("#66E6E8EE");
+
+    public static readonly Brush ComboBg = Frozen("#12FFFFFF");
+    public static readonly Brush ComboKeysText = Frozen("#80E6E8EE");
+    public static readonly Brush ComboLabelText = Frozen("#D9E6E8EE");
+
+    public static readonly Brush HoldText = Frozen("#8CE6E8EE");
+    public static readonly Brush TransparentOutline = Frozen("#1CFFFFFF");
+
+    // キーごとに作り直さないよう、種類ごとに 1 組だけ持つ。
+    private static readonly (Brush, Brush) NormalKey = (Frozen("#1FFFFFFF"), Frozen("#FFF3F4F7"));
+    private static readonly (Brush, Brush) ModifierKey = (Frozen("#294F7BD9"), Frozen("#FFC4D6F5"));
+    private static readonly (Brush, Brush) LayerKey = (Frozen("#29D9A05B"), Frozen("#FFF0D9BC"));
+    private static readonly (Brush, Brush) SystemKey = (Frozen("#29D95B6A"), Frozen("#FFF2C7CD"));
+    private static readonly (Brush, Brush) NoneKey = (Frozen("#00000000"), Frozen("#26E6E8EE"));
 
     public static (Brush Background, Brush Foreground) ForKind(KeyKind kind) => kind switch
     {
-        KeyKind.Modifier    => (Frozen("#3D4A90E2"), Frozen("#FFD6E6FF")),
-        KeyKind.Layer       => (Frozen("#47E8964A"), Frozen("#FFFFE4C4")),
-        KeyKind.System      => (Frozen("#47E2555F"), Frozen("#FFFFD2D7")),
-        KeyKind.Transparent => (Frozen("#0FFFFFFF"), Frozen("#4DE8EAF0")),
-        KeyKind.None        => (Frozen("#00000000"), Frozen("#26E8EAF0")),
-        _                   => (Frozen("#26FFFFFF"), Frozen("#FFF0F2F6")),
+        KeyKind.Modifier => ModifierKey,
+        KeyKind.Layer => LayerKey,
+        KeyKind.System => SystemKey,
+        KeyKind.None => NoneKey,
+        _ => NormalKey,
     };
 }
