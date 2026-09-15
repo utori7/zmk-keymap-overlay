@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Windows;
 using ZmkOverlay.App.Interop;
 using ZmkOverlay.App.Overlay;
+using ZmkOverlay.App.Settings;
 using ZmkOverlay.App.Text;
 using ZmkOverlay.Core.Config;
 using ZmkOverlay.Core.Model;
@@ -10,17 +11,37 @@ using ZmkOverlay.Core.Text;
 
 namespace ZmkOverlay.App;
 
-public partial class App : Application
+public partial class App : Application, ISettingsHost
 {
     private HotKeyService? _hotKeys;
     private OverlayController? _overlay;
     private LayerSyncService? _layerSync;
     private TrayIcon? _tray;
+    private SettingsWindow? _settings;
 
     private IDisposable? _toggleRegistration;
     private readonly List<IDisposable> _layerRegistrations = new();
 
+    /// <summary>ショートカットの入力中などで、ホットキーを外している数。0 のときだけ登録する。</summary>
+    private int _hotkeySuspensions;
+
+    /// <summary>いま効いている設定と、それで読んだキーマップ。</summary>
+    private AppConfig _config = new();
+    private PhysicalLayout _layout = new();
+    private Keymap _keymap = new();
+    private IReadOnlyList<string> _warnings = Array.Empty<string>();
+
     private string _configPath = "";
+    private string? _configOverride;
+
+    // 設定画面で値を動かすたびに作り直すので、同じ失敗は繰り返し知らせない。
+    private string? _toggleFailureNotified;
+    private string _syncFailuresNotified = "";
+    private string _layerFailuresNotified = "";
+
+    public event Action? Applied;
+
+    public event Action<int>? SignalReceived;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -41,6 +62,7 @@ public partial class App : Application
                 _configOverride = System.IO.Path.GetFullPath(e.Args[configIndex + 1]);
 
             if (TryRunRenderMode(e.Args)) return;
+            if (TryRunRenderSettingsMode(e.Args)) return;
             if (TryRunStartupMode(e.Args)) return;
 
             Initialize();
@@ -62,12 +84,13 @@ public partial class App : Application
         if (index < 0) return false;
 
         var outputDir = index + 1 < args.Length ? args[index + 1] : "render-out";
-        var (config, layout, keymap) = LoadAll();
-        var panels = Render.KeymapRenderer.BuildPanels(config, layout, keymap);
+        var (config, path) = LoadConfig();
+        var loaded = LoadKeymap(config, path);
+        var panels = Render.KeymapRenderer.BuildPanels(config, loaded.Layout, loaded.Keymap);
 
-        for (var slot = 0; slot < keymap.Layers.Count; slot++)
+        for (var slot = 0; slot < loaded.Keymap.Layers.Count; slot++)
         {
-            var layer = keymap.Layers[slot];
+            var layer = loaded.Keymap.Layers[slot];
             var file = System.IO.Path.Combine(outputDir, $"layer{layer.Index}.png");
 
             Render.OffscreenRenderer.RenderToPng(panels[slot], file);
@@ -78,7 +101,55 @@ public partial class App : Application
         return true;
     }
 
-    private AppConfig? _config;
+    /// <summary>
+    /// 開発用: --render-settings &lt;出力ディレクトリ&gt; で設定画面の全ページを PNG に書き出して終了する。
+    /// 設定画面はトレイからしか開けず、確かめるには常駐させる必要があるため。
+    /// 画面の外に置いて描くので、利用者の画面には何も出ない。ページ全体が写るよう縦に長くしてある。
+    /// </summary>
+    private bool TryRunRenderSettingsMode(string[] args)
+    {
+        var index = Array.FindIndex(args, a => a is "--render-settings");
+        if (index < 0) return false;
+
+        var outputDir = index + 1 < args.Length ? args[index + 1] : "render-out";
+        var (config, path) = LoadConfig();
+        var loaded = LoadKeymap(config, path);
+
+        _configPath = path;
+        _config = config;
+        _layout = loaded.Layout;
+        _keymap = loaded.Keymap;
+        _warnings = loaded.Warnings;
+
+        var window = new SettingsWindow(this)
+        {
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStartupLocation = WindowStartupLocation.Manual,
+            Left = -20000,
+            Top = -20000,
+            Height = 1300,
+        };
+
+        window.Show();
+
+        foreach (var page in Enum.GetValues<SettingsPage>())
+        {
+            window.ShowPage(page);
+
+            // 表示の切り替えとテーマの適用を描画まで進めてから写す。
+            window.Dispatcher.Invoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() => { }));
+            window.UpdateLayout();
+
+            var file = System.IO.Path.Combine(outputDir, $"settings-{page.ToString().ToLowerInvariant()}.png");
+            Render.OffscreenRenderer.RenderAsShown(window, file);
+            Console.WriteLine(file);
+        }
+
+        window.Close();
+        Shutdown();
+        return true;
+    }
 
     /// <summary>
     /// <c>--startup on|off|status</c> で自動起動を操作して終了する。
@@ -110,139 +181,139 @@ public partial class App : Application
 
     private void Initialize()
     {
-        var (config, layout, keymap) = LoadAll();
+        var (config, path) = LoadConfig();
+        var loaded = LoadKeymap(config, path);
 
+        _configPath = path;
         _config = config;
+        _layout = loaded.Layout;
+        _keymap = loaded.Keymap;
+        _warnings = loaded.Warnings;
+
         _hotKeys = new HotKeyService();
-        _overlay = new OverlayController(config, layout, keymap);
+        _overlay = new OverlayController(config, _layout, _keymap);
 
         _tray = new TrayIcon(
             toggle: ToggleOverlay,
-            showLayer: layerId => _overlay!.ShowManualLayer(layerId),
-            openSettings: OpenSettings,
+            showLayer: ShowLayerByHand,
+            openSettings: () => OpenSettings(SettingsPage.Keyboard),
             reload: Reload,
             exit: () => Shutdown(),
             alwaysVisible: config.IsAlwaysVisible,
             setAlwaysVisible: SetAlwaysVisible,
-            runAtLogin: StartupEntry.IsEnabled,
-            setRunAtLogin: SetRunAtLogin,
-            showWarnings: ShowWarnings);
+            showWarnings: () => OpenSettings(SettingsPage.Keyboard));
 
-        _tray.Configure(config.ToggleHotkey.ToString(), _overlay.Layers, config.EnableManualLayerKeys);
+        _tray.Configure(config.ToggleHotkey.ToString(), _overlay.Layers, id => config.ManualLayerHotkey(id)?.ToString());
 
-        RegisterToggleHotKey(config);
         StartLayerSync(config);
+        RefreshHotkeys();
 
         _overlay.Start();
-        ApplyEnabledState(_overlay.IsEnabled, notify: false);
-
-        ReportWarnings();
+        _tray.ShowState(_overlay.IsEnabled, notify: false);
+        _tray.ReportWarnings(_warnings);
     }
 
-    /// <summary>
-    /// 常時表示の設定では、切り替えた結果が画面にそのまま出るので通知は要らない。
-    /// 知らせるのは、無効にしても見た目が変わらない「L1 以上のときだけ表示」のときだけ。
-    /// </summary>
-    private void ToggleOverlay() =>
-        ApplyEnabledState(_overlay!.Toggle(), notify: _config is { IsAlwaysVisible: false });
+    // ---- 読み込みと反映 ----
 
-    /// <summary>
-    /// 有効・無効に付随するものをまとめて合わせる。
-    ///
-    /// レイヤー直接指定のホットキーは、表示中ではなく「有効なあいだ」押さえる。
-    /// 表示に連動させると、L1 以上のときだけ表示する設定では
-    /// 素の状態で押さえておらず使えないうえ、レイヤーキーを叩くたびに
-    /// 登録と解除を繰り返すことになる。
-    /// </summary>
-    private void ApplyEnabledState(bool enabled, bool notify)
-    {
-        if (enabled && _config is not null) RegisterLayerHotKeys(_config);
-        else ReleaseLayerHotKeys();
-
-        _tray?.ShowState(enabled, notify);
-    }
-
-    private string? _configOverride;
-
-    private (AppConfig, PhysicalLayout, Keymap) LoadAll()
+    private (AppConfig Config, string Path) LoadConfig()
     {
         var path = _configOverride ?? ConfigPaths.FindConfig();
 
-        AppConfig config;
-        if (path is null)
-        {
-            // 初回起動。既定値を書き出して、以後は利用者が編集できるようにする。
-            config = new AppConfig();
-            path = ConfigPaths.DefaultWriteTarget();
-            config.Save(path);
-        }
-        else
-        {
-            config = AppConfig.Load(path);
-        }
+        if (path is not null) return (AppConfig.Load(path), path);
 
-        _configPath = path;
+        // 初回起動。既定値を書き出して、以後は利用者が編集できるようにする。
+        var created = new AppConfig();
+        path = ConfigPaths.DefaultWriteTarget();
+        created.Save(path);
 
-        // キーのラベルも表示言語で変わるので、キーマップを読むより先に決める。
-        Strings.Language = Strings.FromSetting(config.Language);
-
-        var loaded = KeymapLoader.Load(config, path);
-
-        // ZMK のソースを読むと、解釈できなかった箇所が警告として返る。
-        // 黙って落とすと「なぜこのキーだけ変なのか」が分からなくなるので出す。
-        _warnings = loaded.Warnings;
-
-        return (config, loaded.Layout, loaded.Keymap);
+        return (created, path);
     }
 
-    private IReadOnlyList<string> _warnings = Array.Empty<string>();
+    /// <summary>キーのラベルも表示言語で変わるので、キーマップを読むより先に言語を決める。</summary>
+    private static LoadedKeymap LoadKeymap(AppConfig config, string configPath)
+    {
+        Strings.Language = Strings.FromSetting(config.Language);
 
-    /// <summary>最後に読み込んだときの警告をトレイに渡す。0 件ならメニューからも消える。</summary>
-    private void ReportWarnings() => _tray?.ReportWarnings(_warnings);
-
-    /// <summary>設定画面ができるまでのつなぎ。警告をすべてダイアログで見せる。</summary>
-    private static void ShowWarnings(IReadOnlyList<string> warnings) =>
-        MessageBox.Show(
-            string.Join(Environment.NewLine, warnings),
-            $"ZMK Keymap Overlay — {UiText.WarningsTitle}",
-            MessageBoxButton.OK, MessageBoxImage.Warning);
+        // ZMK のソースを読むと、解釈できなかった箇所が警告として返る。
+        // 黙って落とすと「なぜこのキーだけ変なのか」が分からなくなるので、呼び出し側で出す。
+        return KeymapLoader.Load(config, configPath);
+    }
 
     /// <summary>
-    /// 設定画面ができるまでのつなぎ。設定ファイルを、エクスプローラで選択した状態で開く。
+    /// 設定を反映する唯一の経路。トレイ・設定画面・再読み込みはすべてここを通る。
+    ///
+    /// 先にキーマップを読み、読めたときだけ反映して保存する。
+    /// 読めない設定を保存すると、次に起動したときに立ち上がらなくなるため。
     /// </summary>
-    private void OpenSettings()
+    private bool TryApply(AppConfig config, bool save, out string? error)
     {
+        var previousLanguage = Strings.Language;
+        LoadedKeymap loaded;
+
         try
         {
-            System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{_configPath}\"");
+            loaded = LoadKeymap(config, _configPath);
         }
         catch (Exception ex)
         {
-            _tray?.Notify(UiText.CannotOpenSettings, ex.Message, System.Windows.Forms.ToolTipIcon.Warning);
+            // 読み込みの前に言語だけ切り替わっているので戻す。
+            Strings.Language = previousLanguage;
+            error = ex.Message;
+            return false;
+        }
+
+        Commit(config, loaded);
+        if (Strings.Language != previousLanguage) _tray?.ApplyLanguage();
+
+        error = null;
+        if (!save) return true;
+
+        try
+        {
+            config.Save(_configPath);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // 保存できなくても今の動作は変えたままにする。次回起動で戻るだけ。
+            error = $"{UiText.CannotSaveSettings}: {ex.Message}";
+            return false;
         }
     }
 
+    /// <summary>読み込めた設定を、オーバーレイ・トレイ・ホットキー・レイヤー追従に行き渡らせる。</summary>
+    private void Commit(AppConfig config, LoadedKeymap loaded)
+    {
+        _config = config;
+        _layout = loaded.Layout;
+        _keymap = loaded.Keymap;
+        _warnings = loaded.Warnings;
+
+        _overlay!.Reload(config, _layout, _keymap);
+
+        _tray?.SyncAlwaysVisible(config.IsAlwaysVisible);
+        _tray?.Configure(config.ToggleHotkey.ToString(), _overlay.Layers, id => config.ManualLayerHotkey(id)?.ToString());
+
+        _layerSync?.Dispose();
+        StartLayerSync(config);
+        RefreshHotkeys();
+
+        _tray?.ShowState(_overlay.IsEnabled, notify: false);
+        _tray?.ReportWarnings(_warnings);
+
+        Applied?.Invoke();
+    }
+
+    /// <summary>設定ファイルとキーマップを読み直す。読んだものをそのまま使うので保存はしない。</summary>
     private void Reload()
     {
         try
         {
-            var (config, layout, keymap) = LoadAll();
+            var (config, path) = LoadConfig();
+            _configPath = path;
 
-            _config = config;
-            _overlay!.Reload(config, layout, keymap);
-            _tray?.SyncAlwaysVisible(config.IsAlwaysVisible);
-            _tray?.Configure(config.ToggleHotkey.ToString(), _overlay.Layers, config.EnableManualLayerKeys);
-
-            _toggleRegistration?.Dispose();
-            RegisterToggleHotKey(config);
-
-            _layerSync?.Dispose();
-            StartLayerSync(config);
-
-            ApplyEnabledState(_overlay.IsEnabled, notify: false);
-
-            // 成功したことはバルーンで知らせない。画面の中身が変わるので見れば分かる。
-            ReportWarnings();
+            if (!TryApply(config, save: false, out var error))
+                ShowError(UiText.ReloadFailed, new InvalidOperationException(error));
         }
         catch (Exception ex)
         {
@@ -256,48 +327,77 @@ public partial class App : Application
     /// </summary>
     private void SetAlwaysVisible(bool always)
     {
-        if (_config is null) return;
+        var next = _config.Clone();
+        next.DisplayMode = always ? "always" : "layersOnly";
 
-        _config.DisplayMode = always ? "always" : "layersOnly";
-        _overlay?.ApplyConfig(_config);
-
-        try
-        {
-            _config.Save(_configPath);
-        }
-        catch (Exception ex)
-        {
-            // 保存できなくても今の動作は変えたままにする。次回起動で戻るだけ。
-            _tray?.Notify(UiText.CannotSaveSettings, ex.Message,
+        if (!TryApply(next, save: true, out var error))
+            _tray?.Notify(UiText.CannotSaveSettings, error ?? UiText.UnknownCause,
                 System.Windows.Forms.ToolTipIcon.Warning);
+    }
+
+    private void OpenSettings(SettingsPage page)
+    {
+        if (_settings is null)
+        {
+            _settings = new SettingsWindow(this);
+            _settings.Closed += (_, _) => _settings = null;
+            _settings.Show();
         }
+
+        _settings.ShowPage(page);
+
+        if (_settings.WindowState == WindowState.Minimized) _settings.WindowState = WindowState.Normal;
+        _settings.Activate();
+    }
+
+    // ---- 有効・無効 ----
+
+    /// <summary>
+    /// 常時表示の設定では、切り替えた結果が画面にそのまま出るので通知は要らない。
+    /// 知らせるのは、無効にしても見た目が変わらない「L1 以上のときだけ表示」のときだけ。
+    /// </summary>
+    private void ToggleOverlay()
+    {
+        var enabled = _overlay!.Toggle();
+
+        RefreshLayerHotKeys();
+        _tray?.ShowState(enabled, notify: !_config.IsAlwaysVisible);
+    }
+
+    /// <summary>トレイからレイヤーを選んだ。無効だったら有効になるので、それに付随するものも合わせる。</summary>
+    private void ShowLayerByHand(int layerId)
+    {
+        _overlay!.ShowManualLayer(layerId);
+
+        RefreshLayerHotKeys();
+        _tray?.ShowState(_overlay.IsEnabled, notify: false);
+    }
+
+    // ---- ホットキー ----
+
+    private void RefreshHotkeys()
+    {
+        _toggleRegistration?.Dispose();
+        _toggleRegistration = null;
+
+        if (_hotkeySuspensions == 0) RegisterToggleHotKey(_config);
+
+        RefreshLayerHotKeys();
     }
 
     /// <summary>
-    /// 自動起動の登録・解除。設定ファイルではなくスタートアップフォルダの
-    /// 実体が唯一の情報源なので、失敗したらメニューの表示を実体に戻す。
+    /// レイヤー直接指定のホットキーは、表示中ではなく「有効なあいだ」押さえる。
+    /// 表示に連動させると、L1 以上のときだけ表示する設定では
+    /// 素の状態で押さえておらず使えないうえ、レイヤーキーを叩くたびに
+    /// 登録と解除を繰り返すことになる。
     /// </summary>
-    private void SetRunAtLogin(bool enable)
+    private void RefreshLayerHotKeys()
     {
-        try
-        {
-            // --config で起動していたときだけ、その指定を引き継ぐ。
-            if (enable) StartupEntry.Enable(_configOverride);
-            else StartupEntry.Disable();
+        ReleaseLayerHotKeys();
 
-            _tray?.Notify(
-                enable ? UiText.RunAtLoginOn : UiText.RunAtLoginOff,
-                StartupEntry.FolderPath);
-        }
-        catch (Exception ex)
-        {
-            _tray?.Notify(UiText.CannotSetRunAtLogin, ex.Message,
-                System.Windows.Forms.ToolTipIcon.Warning);
-        }
-        finally
-        {
-            _tray?.SyncRunAtLogin(StartupEntry.IsEnabled);
-        }
+        if (_hotkeySuspensions > 0 || _overlay is not { IsEnabled: true }) return;
+
+        RegisterLayerHotKeys(_config);
     }
 
     private void RegisterToggleHotKey(AppConfig config)
@@ -305,55 +405,123 @@ public partial class App : Application
         _toggleRegistration = _hotKeys!.TryRegister(
             config.ToggleHotkey, ToggleOverlay, out var error);
 
-        if (_toggleRegistration is null)
+        if (_toggleRegistration is not null)
         {
-            // ここが取れないとアプリを呼び出す手段がトレイだけになるので、必ず知らせる。
-            _tray?.Notify(UiText.CannotRegisterHotkey, error ?? UiText.UnknownCause,
-                System.Windows.Forms.ToolTipIcon.Warning);
+            _toggleFailureNotified = null;
+            return;
         }
+
+        var spec = config.ToggleHotkey.ToString();
+        if (_toggleFailureNotified == spec) return;
+        _toggleFailureNotified = spec;
+
+        // ここが取れないとアプリを呼び出す手段がトレイだけになるので、必ず知らせる。
+        _tray?.Notify(UiText.CannotRegisterHotkey, error ?? UiText.UnknownCause,
+            System.Windows.Forms.ToolTipIcon.Warning);
     }
 
     private void StartLayerSync(AppConfig config)
     {
         _layerSync = new LayerSyncService(_hotKeys!, _overlay!, config.LayerSync);
+        _layerSync.SignalReceived += layerId => SignalReceived?.Invoke(layerId);
 
-        var failures = _layerSync.Start();
-        if (failures.Count == 0) return;
+        var failures = string.Join("\n", _layerSync.Start());
 
         // 合図キーが取れないレイヤーは黙って追従しなくなるだけなので、
         // 気づけるように知らせる。他のレイヤーは動き続ける。
-        _tray?.Notify(UiText.LayersNotFollowed, string.Join("\n", failures),
-            System.Windows.Forms.ToolTipIcon.Warning);
+        if (failures.Length > 0 && failures != _syncFailuresNotified)
+            _tray?.Notify(UiText.LayersNotFollowed, failures, System.Windows.Forms.ToolTipIcon.Warning);
+
+        _syncFailuresNotified = failures;
     }
 
     private void RegisterLayerHotKeys(AppConfig config)
     {
-        if (!config.EnableManualLayerKeys) return;
-
-        ReleaseLayerHotKeys();
+        var failures = new List<string>();
 
         foreach (var layerId in _overlay!.LayerIds)
         {
-            if (layerId is < 0 or > 9) continue;
-
-            var spec = new HotkeySpec
-            {
-                Modifiers = { "Ctrl", "Alt" },
-                Key = layerId.ToString(),
-            };
+            if (config.ManualLayerHotkey(layerId) is not { } spec) continue;
 
             var id = layerId;
-            var registration = _hotKeys!.TryRegister(spec, () => _overlay!.ShowManualLayer(id), out _);
+            var registration = _hotKeys!.TryRegister(spec, () => _overlay!.ShowManualLayer(id), out var error);
 
-            // 取れない番号があっても他は動かしたいので、失敗は黙って飛ばす。
+            // 取れないものがあっても他は動かす。組み合わせは利用者が選んだものなので、失敗は知らせる。
             if (registration is not null) _layerRegistrations.Add(registration);
+            else failures.Add($"L{id}: {error}");
         }
+
+        var summary = string.Join("\n", failures);
+        if (summary.Length > 0 && summary != _layerFailuresNotified)
+            _tray?.Notify(UiText.CannotRegisterHotkey, summary, System.Windows.Forms.ToolTipIcon.Warning);
+
+        _layerFailuresNotified = summary;
     }
 
     private void ReleaseLayerHotKeys()
     {
         foreach (var registration in _layerRegistrations) registration.Dispose();
         _layerRegistrations.Clear();
+    }
+
+    // ---- 設定画面から見たアプリ ----
+
+    AppConfig ISettingsHost.Config => _config;
+
+    string ISettingsHost.ConfigPath => _configPath;
+
+    PhysicalLayout ISettingsHost.Layout => _layout;
+
+    Keymap ISettingsHost.Keymap => _keymap;
+
+    IReadOnlyList<string> ISettingsHost.Warnings => _warnings;
+
+    bool ISettingsHost.TryApply(AppConfig config, out string? error) => TryApply(config, save: true, out error);
+
+    bool ISettingsHost.RunAtLogin => StartupEntry.IsEnabled;
+
+    /// <summary>
+    /// 自動起動の登録・解除。設定ファイルではなくスタートアップフォルダの
+    /// 実体が唯一の情報源なので、呼び出し側は結果を <see cref="StartupEntry.IsEnabled"/> で見直す。
+    /// </summary>
+    bool ISettingsHost.TrySetRunAtLogin(bool enable, out string? error)
+    {
+        try
+        {
+            // --config で起動していたときだけ、その指定を引き継ぐ。
+            if (enable) StartupEntry.Enable(_configOverride);
+            else StartupEntry.Disable();
+
+            error = null;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            return false;
+        }
+    }
+
+    IDisposable ISettingsHost.SuspendHotkeys()
+    {
+        if (_hotkeySuspensions++ == 0) RefreshHotkeys();
+        return new HotkeySuspension(this);
+    }
+
+    private sealed class HotkeySuspension : IDisposable
+    {
+        private readonly App _app;
+        private bool _released;
+
+        public HotkeySuspension(App app) => _app = app;
+
+        public void Dispose()
+        {
+            if (_released) return;
+            _released = true;
+
+            if (--_app._hotkeySuspensions == 0) _app.RefreshHotkeys();
+        }
     }
 
     /// <summary>

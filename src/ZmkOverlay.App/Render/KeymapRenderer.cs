@@ -206,8 +206,10 @@ internal static class KeymapRenderer
     {
         var parts = new List<string> { UiText.HintToggle(config.ToggleHotkey.ToString()) };
 
+        // 既定の Ctrl+Alt+数字 のときだけ、範囲でまとめて短く書ける。利用者が割り当てを変えていたら
+        // 並べると長くなりすぎるので出さない（割り当てはトレイのメニューと設定画面で見られる）。
         var numbered = keymap.Layers.Select(l => l.Index).Where(i => i is >= 0 and <= 9).ToList();
-        if (config.EnableManualLayerKeys && numbered.Count > 0)
+        if (config.EnableManualLayerKeys && config.LayerHotkeys.Count == 0 && numbered.Count > 0)
         {
             var range = numbered.Count == 1
                 ? numbered[0].ToString(CultureInfo.InvariantCulture)

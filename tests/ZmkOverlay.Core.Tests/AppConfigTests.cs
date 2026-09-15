@@ -80,6 +80,69 @@ public class AppConfigTests : IDisposable
         Assert.Equal(72, AppConfig.Load(_path).KeyUnitPx);
     }
 
+    [Fact]
+    public void CloneIsIndependentAndKeepsUnknownKeys()
+    {
+        // 設定画面は複製を書き換えて反映を試し、失敗したら複製を捨てる。
+        // 入れ子の辞書やホットキーまで元と共有していると、捨てても元が変わってしまう。
+        File.WriteAllText(_path, @"{
+              ""_comment"": ""複製にも残る"",
+              ""keyUnitPx"": 50,
+              ""zmk"": { ""signalKeys"": { ""1"": ""F13"" } }
+            }");
+
+        var original = AppConfig.Load(_path);
+        var copy = original.Clone();
+
+        copy.KeyUnitPx = 30;
+        copy.Zmk.SignalKeys["2"] = "F14";
+        copy.ToggleHotkey.Key = "J";
+
+        Assert.Equal(50, original.KeyUnitPx);
+        Assert.Single(original.Zmk.SignalKeys);
+        Assert.Equal("K", original.ToggleHotkey.Key);
+
+        copy.Save(_path);
+        Assert.Contains("複製にも残る", File.ReadAllText(_path));
+    }
+
+    [Fact]
+    public void LayersUseCtrlAltDigitsUnlessTheUserChoseOtherwise()
+    {
+        // 数字キーの無い自作キーボードのために、レイヤーごとに組み合わせを変えられる。
+        var config = new AppConfig();
+        config.LayerHotkeys["2"] = new HotkeySpec { Modifiers = { "Ctrl", "Shift" }, Key = "F2" };
+        config.LayerHotkeys["3"] = new HotkeySpec();   // 割り当てを外した
+
+        Assert.Equal("Ctrl+Alt+1", config.ManualLayerHotkey(1)?.ToString());
+        Assert.Equal("Ctrl+Shift+F2", config.ManualLayerHotkey(2)?.ToString());
+        Assert.Null(config.ManualLayerHotkey(3));
+        Assert.Null(config.ManualLayerHotkey(12));   // 1 桁の数字で押せない番号に既定は無い
+
+        config.EnableManualLayerKeys = false;
+        Assert.Null(config.ManualLayerHotkey(2));
+    }
+
+    [Fact]
+    public void LayerHotkeysRoundTripThroughTheFile()
+    {
+        var config = new AppConfig();
+        config.LayerHotkeys["1"] = new HotkeySpec { Modifiers = { "Win", "Alt" }, Key = "Q" };
+        config.Save(_path);
+
+        Assert.Equal("Win+Alt+Q", AppConfig.Load(_path).ManualLayerHotkey(1)?.ToString());
+    }
+
+    [Fact]
+    public void SameCombinationIgnoresOrderCaseAndSpelling()
+    {
+        var ctrlAltK = new HotkeySpec { Modifiers = { "Ctrl", "Alt" }, Key = "k" };
+
+        Assert.True(ctrlAltK.SameAs(new HotkeySpec { Modifiers = { "alt", "Control" }, Key = "K" }));
+        Assert.False(ctrlAltK.SameAs(new HotkeySpec { Modifiers = { "Ctrl" }, Key = "K" }));
+        Assert.False(ctrlAltK.SameAs(new HotkeySpec { Modifiers = { "Ctrl", "Alt" }, Key = "J" }));
+    }
+
     public void Dispose()
     {
         try

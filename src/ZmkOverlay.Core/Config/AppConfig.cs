@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -13,6 +14,24 @@ public sealed class HotkeySpec
 
     public override string ToString() =>
         Modifiers.Count == 0 ? Key : string.Join("+", Modifiers) + "+" + Key;
+
+    /// <summary>
+    /// 同じ組み合わせか。修飾キーの順番・大文字小文字・Control / Ctrl のような表記の揺れは無視する。
+    /// 設定画面で、すでに使われている組み合わせを選ばせないために使う。
+    /// </summary>
+    public bool SameAs(HotkeySpec other) =>
+        string.Equals(Key.Trim(), other.Key.Trim(), StringComparison.OrdinalIgnoreCase)
+        && NormalizedModifiers().SetEquals(other.NormalizedModifiers());
+
+    private HashSet<string> NormalizedModifiers() =>
+        Modifiers
+            .Select(m => m.Trim().ToLowerInvariant() switch
+            {
+                "control" => "ctrl",
+                "windows" => "win",
+                var name => name,
+            })
+            .ToHashSet();
 }
 
 /// <summary>
@@ -142,10 +161,31 @@ public sealed class AppConfig
     public LayerSyncConfig LayerSync { get; set; } = new();
 
     /// <summary>
-    /// 表示中だけ登録するレイヤー直接指定キー。Ctrl+Alt+1..9 に順に割り当てる。
-    /// Phase 2 でレイヤー連動が入ったら不要になるが、フォールバックとして残す。
+    /// レイヤーを手で表示するショートカットを使うか。キーボードを書き換える前や、
+    /// 合図キーを持たないレイヤーを見たいときの逃げ道。割り当ては <see cref="LayerHotkeys"/>。
     /// </summary>
     public bool EnableManualLayerKeys { get; set; } = true;
+
+    /// <summary>
+    /// レイヤー番号 → そのレイヤーを手で表示するショートカット。
+    /// 書かれていないレイヤーは Ctrl+Alt+番号（0〜9 のみ）を使う。key を空にすると割り当てない。
+    ///
+    /// 数字キーを持たない自作キーボードでも使えるように、好きな組み合わせにできる。
+    /// </summary>
+    public Dictionary<string, HotkeySpec> LayerHotkeys { get; set; } = new();
+
+    /// <summary>そのレイヤーを手で表示するショートカット。使わない・割り当てが無いなら null。</summary>
+    public HotkeySpec? ManualLayerHotkey(int layerId)
+    {
+        if (!EnableManualLayerKeys) return null;
+
+        if (LayerHotkeys.TryGetValue(layerId.ToString(CultureInfo.InvariantCulture), out var custom))
+            return string.IsNullOrWhiteSpace(custom.Key) ? null : custom;
+
+        return layerId is >= 0 and <= 9
+            ? new HotkeySpec { Modifiers = { "Ctrl", "Alt" }, Key = layerId.ToString(CultureInfo.InvariantCulture) }
+            : null;
+    }
 
     /// <summary>モデルに無いキーの保持。<see cref="ZmkSourceConfig.Extra"/> と同じ目的。</summary>
     [JsonExtensionData]
@@ -167,6 +207,13 @@ public sealed class AppConfig
     };
 
     public static JsonSerializerOptions SerializerOptions => JsonOptions;
+
+    /// <summary>
+    /// 設定画面で書き換えるための複製。反映に失敗したら複製を捨てるだけで済むよう、
+    /// いま効いている設定そのものには触らない。ファイルと同じ経路で複製するので注釈（Extra）も引き継ぐ。
+    /// </summary>
+    public AppConfig Clone() =>
+        JsonSerializer.Deserialize<AppConfig>(JsonSerializer.Serialize(this, JsonOptions), JsonOptions)!;
 
     public static AppConfig Load(string path) =>
         JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(path), JsonOptions)

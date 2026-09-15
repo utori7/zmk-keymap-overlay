@@ -34,6 +34,9 @@ internal sealed class LayerSyncService : IDisposable
 
     private bool _disposed;
 
+    /// <summary>合図キーを受け取った。設定画面の「テスト」表示に使う。</summary>
+    public event Action<int>? SignalReceived;
+
     public LayerSyncService(
         HotKeyService hotKeys, OverlayController overlay, LayerSyncConfig config)
     {
@@ -89,6 +92,8 @@ internal sealed class LayerSyncService : IDisposable
 
     private void OnSignal(int layerId, int vk)
     {
+        SignalReceived?.Invoke(layerId);
+
         if (!_config.IsHoldMode)
         {
             if (_overlay.IsShowingLayer(layerId)) _overlay.EndTransient();

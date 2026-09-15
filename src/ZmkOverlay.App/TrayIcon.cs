@@ -12,7 +12,7 @@ namespace ZmkOverlay.App;
 
 /// <summary>
 /// 常駐アプリなので、終了手段が必ず見えている必要がある。
-/// オーバーレイ自体はクリックを受け取らないため、操作の受け皿はここだけ。
+/// オーバーレイ自体はクリックを受け取らないため、操作の受け皿はここと設定画面だけ。
 ///
 /// GlobalUsings で Color / Point / Size / Rectangle などは WPF 側に寄せてあるので、
 /// このファイルで System.Drawing のそれらを使うときは完全修飾で書くこと。
@@ -31,16 +31,20 @@ public sealed class TrayIcon : IDisposable
     private readonly ToolStripLabel _header;
     private readonly ToolStripMenuItem _toggle;
     private readonly ToolStripMenuItem _layers;
+    private readonly ToolStripMenuItem _mode;
     private readonly ToolStripMenuItem _layersOnly;
     private readonly ToolStripMenuItem _always;
-    private readonly ToolStripMenuItem _runAtLogin;
+    private readonly ToolStripMenuItem _settings;
+    private readonly ToolStripMenuItem _reload;
     private readonly ToolStripMenuItem _warnings;
+    private readonly ToolStripMenuItem _exit;
 
     private readonly Action<int> _showLayer;
     private readonly Action<bool> _setAlwaysVisible;
-    private readonly Action<IReadOnlyList<string>> _showWarnings;
+    private readonly Action _showWarnings;
 
     private IReadOnlyList<string> _currentWarnings = Array.Empty<string>();
+    private bool _enabled = true;
 
     /// <summary>直近のバルーンをクリックしたときの動作。バルーンごとに差し替える。</summary>
     private Action? _balloonClicked;
@@ -56,9 +60,7 @@ public sealed class TrayIcon : IDisposable
         Action exit,
         bool alwaysVisible,
         Action<bool> setAlwaysVisible,
-        bool runAtLogin,
-        Action<bool> setRunAtLogin,
-        Action<IReadOnlyList<string>> showWarnings)
+        Action showWarnings)
     {
         _showLayer = showLayer;
         _setAlwaysVisible = setAlwaysVisible;
@@ -77,64 +79,42 @@ public sealed class TrayIcon : IDisposable
 
         // 押すと何が起きるかを書く。「有効 / 無効」だと、いまどちらなのか、
         // 押したらどうなるのかが読み取れない。
-        _toggle = new ToolStripMenuItem(UiText.Disable, null, (_, _) => toggle());
+        _toggle = new ToolStripMenuItem("", null, (_, _) => toggle());
 
         // キーボードをまだ書き換えていなくても、ここから各レイヤーを見られる。
-        _layers = new ToolStripMenuItem(UiText.ShowLayer);
+        _layers = new ToolStripMenuItem();
 
         // 2 つ並べて、選ばれていない側が何なのかも見えるようにする。
         // チェックボックス 1 個だと、外したときの挙動がどこにも書かれない。
-        _layersOnly = new ToolStripMenuItem(UiText.ModeLayersOnly)
-        {
-            Checked = !alwaysVisible,
-            ToolTipText = UiText.ModeLayersOnlyTip,
-        };
-
-        _always = new ToolStripMenuItem(UiText.ModeAlways)
-        {
-            Checked = alwaysVisible,
-            ToolTipText = UiText.ModeAlwaysTip,
-        };
+        _layersOnly = new ToolStripMenuItem { Checked = !alwaysVisible };
+        _always = new ToolStripMenuItem { Checked = alwaysVisible };
 
         _layersOnly.Click += (_, _) => ChooseMode(always: false);
         _always.Click += (_, _) => ChooseMode(always: true);
 
-        var mode = new ToolStripMenuItem(UiText.DisplayMode);
-        mode.DropDownItems.Add(_layersOnly);
-        mode.DropDownItems.Add(_always);
+        _mode = new ToolStripMenuItem();
+        _mode.DropDownItems.Add(_layersOnly);
+        _mode.DropDownItems.Add(_always);
 
-        _runAtLogin = new ToolStripMenuItem(UiText.RunAtLogin)
-        {
-            CheckOnClick = true,
-            Checked = runAtLogin,
-            ToolTipText = UiText.RunAtLoginTip,
-        };
-
-        // 失敗して元に戻すときにも CheckedChanged が飛ぶので、往復しないよう抑制する。
-        _runAtLogin.CheckedChanged += (_, _) =>
-        {
-            if (_suppressModeEvents) return;
-            setRunAtLogin(_runAtLogin.Checked);
-        };
+        _settings = new ToolStripMenuItem("", null, (_, _) => openSettings());
+        _reload = new ToolStripMenuItem("", null, (_, _) => reload());
 
         // バルーンは見逃すと二度と見られないので、警告があるあいだはメニューにも残す。
-        _warnings = new ToolStripMenuItem("", null, (_, _) => _showWarnings(_currentWarnings))
-        {
-            Visible = false,
-        };
+        _warnings = new ToolStripMenuItem("", null, (_, _) => _showWarnings()) { Visible = false };
+
+        _exit = new ToolStripMenuItem("", null, (_, _) => exit());
 
         menu.Items.Add(_header);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_toggle);
         menu.Items.Add(_layers);
-        menu.Items.Add(mode);
-        menu.Items.Add(_runAtLogin);
+        menu.Items.Add(_mode);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(UiText.Settings, null, (_, _) => openSettings());
-        menu.Items.Add(UiText.ReloadKeymap, null, (_, _) => reload());
+        menu.Items.Add(_settings);
+        menu.Items.Add(_reload);
         menu.Items.Add(_warnings);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(UiText.Exit, null, (_, _) => exit());
+        menu.Items.Add(_exit);
 
         _icon = new NotifyIcon
         {
@@ -151,12 +131,36 @@ public sealed class TrayIcon : IDisposable
         };
 
         _icon.BalloonTipClicked += (_, _) => _balloonClicked?.Invoke();
+
+        ApplyLanguage();
+    }
+
+    /// <summary>
+    /// 文言を今の表示言語で入れ直す。設定画面で言語を切り替えたときに呼ぶ。
+    /// レイヤーの一覧は <see cref="Configure"/> が作り直す。
+    /// </summary>
+    public void ApplyLanguage()
+    {
+        _layers.Text = UiText.ShowLayer;
+        _mode.Text = UiText.DisplayMode;
+        _layersOnly.Text = UiText.ModeLayersOnly;
+        _layersOnly.ToolTipText = UiText.ModeLayersOnlyTip;
+        _always.Text = UiText.ModeAlways;
+        _always.ToolTipText = UiText.ModeAlwaysTip;
+        _settings.Text = UiText.Settings;
+        _reload.Text = UiText.ReloadKeymap;
+        _warnings.Text = UiText.ViewWarnings(_currentWarnings.Count);
+        _exit.Text = UiText.Exit;
+
+        ShowState(_enabled, notify: false);
     }
 
     /// <summary>
     /// キーマップや設定を読み直したときに、メニューの中身を合わせる。
     /// </summary>
-    public void Configure(string toggleHotkey, IReadOnlyList<(int Id, string Name)> layers, bool manualLayerKeys)
+    /// <param name="layerShortcut">レイヤー番号 → 手で表示するショートカットの表記。無ければ null。</param>
+    public void Configure(
+        string toggleHotkey, IReadOnlyList<(int Id, string Name)> layers, Func<int, string?> layerShortcut)
     {
         _toggle.ShortcutKeyDisplayString = toggleHotkey;
 
@@ -164,12 +168,10 @@ public sealed class TrayIcon : IDisposable
 
         foreach (var (id, name) in layers)
         {
-            var item = new ToolStripMenuItem($"L{id} {name}".TrimEnd(), null, (_, _) => _showLayer(id));
-
-            if (manualLayerKeys && id is >= 0 and <= 9)
-                item.ShortcutKeyDisplayString = $"Ctrl+Alt+{id}";
-
-            _layers.DropDownItems.Add(item);
+            _layers.DropDownItems.Add(new ToolStripMenuItem($"L{id} {name}".TrimEnd(), null, (_, _) => _showLayer(id))
+            {
+                ShortcutKeyDisplayString = layerShortcut(id),
+            });
         }
 
         _layers.Enabled = layers.Count > 0;
@@ -191,6 +193,7 @@ public sealed class TrayIcon : IDisposable
     /// </summary>
     public void ShowState(bool enabled, bool notify)
     {
+        _enabled = enabled;
         var state = enabled ? UiText.StateEnabled : UiText.StateDisabled;
 
         _toggle.Text = enabled ? UiText.Disable : UiText.Enable;
@@ -200,16 +203,6 @@ public sealed class TrayIcon : IDisposable
 
         if (notify)
             Notify(BaseTitle, enabled ? UiText.OverlayEnabled : UiText.OverlayDisabled);
-    }
-
-    /// <summary>登録に失敗したときなど、実際の状態に戻す。</summary>
-    public void SyncRunAtLogin(bool value)
-    {
-        if (_runAtLogin.Checked == value) return;
-
-        _suppressModeEvents = true;
-        _runAtLogin.Checked = value;
-        _suppressModeEvents = false;
     }
 
     /// <summary>設定を読み直したときに、選択状態を実際の設定に合わせ直す。</summary>
@@ -223,19 +216,23 @@ public sealed class TrayIcon : IDisposable
         _suppressModeEvents = false;
     }
 
-    /// <summary>警告の一覧を差し替える。1 件以上あればバルーンでも知らせる。</summary>
+    /// <summary>
+    /// 警告の一覧を差し替える。前回と中身が変わって 1 件以上あるときだけバルーンでも知らせる。
+    /// 設定画面で値を動かすたびに同じ警告が出てくると、うるさいだけになる。
+    /// </summary>
     public void ReportWarnings(IReadOnlyList<string> warnings)
     {
+        var changed = !warnings.SequenceEqual(_currentWarnings);
+
         _currentWarnings = warnings;
         _warnings.Visible = warnings.Count > 0;
         _warnings.Text = UiText.ViewWarnings(warnings.Count);
 
-        if (warnings.Count == 0) return;
+        if (!changed || warnings.Count == 0) return;
 
         var message = string.Join("\n", warnings.Take(3)) + "\n" + UiText.ClickForAll;
 
-        Notify(UiText.KeymapWarnings(warnings.Count), message, ToolTipIcon.Warning,
-            onClick: () => _showWarnings(_currentWarnings));
+        Notify(UiText.KeymapWarnings(warnings.Count), message, ToolTipIcon.Warning, onClick: _showWarnings);
     }
 
     public void Notify(string title, string message, ToolTipIcon kind = ToolTipIcon.Info, Action? onClick = null)

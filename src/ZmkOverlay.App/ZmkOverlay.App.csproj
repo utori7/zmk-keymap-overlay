@@ -26,6 +26,12 @@
       WinForms はトレイアイコンにしか使っていないので指摘は当たらない。
     -->
     <NoWarn>$(NoWarn);WFAC010;WFO0003</NoWarn>
+
+    <!--
+      WPF0001: 設定画面に使う ThemeMode（Windows 11 風の見た目、ライト/ダークに追従）は
+      .NET 10 でも試験的 API 扱いで警告が出る。使うのは設定画面だけで、オーバーレイは自前で描いている。
+    -->
+    <NoWarn>$(NoWarn);WPF0001</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

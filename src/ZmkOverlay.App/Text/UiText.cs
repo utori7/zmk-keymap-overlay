@@ -22,9 +22,6 @@ internal static class UiText
 
     public static string CannotSaveSettings => T("設定を保存できません", "Cannot save settings");
 
-    public static string RunAtLoginOn => T("サインイン時に起動します", "Will start when you sign in");
-    public static string RunAtLoginOff => T("サインイン時の起動をやめました", "Will no longer start when you sign in");
-    public static string CannotSetRunAtLogin => T("自動起動を設定できません", "Cannot change the start-up setting");
 
     public static string CannotRegisterHotkey => T("ホットキーを登録できません", "Cannot register the hotkey");
     public static string UnknownCause => T("原因不明", "Unknown cause");
@@ -57,7 +54,6 @@ internal static class UiText
     public static string ViewWarnings(int count) => T($"警告 {count} 件を見る…", $"View {count} warning(s)…");
     public static string ClickForAll => T("クリックですべて表示", "Click to see all");
     public static string WarningsTitle => T("キーマップの警告", "Keymap warnings");
-    public static string CannotOpenSettings => T("設定ファイルを開けません", "Cannot open the settings file");
 
     public static string StateEnabled => T("有効", "enabled");
     public static string StateDisabled => T("無効", "disabled");
@@ -100,4 +96,127 @@ internal static class UiText
     public static string HintLayers(string range) => T($"Ctrl+Alt+{range} レイヤー", $"Ctrl+Alt+{range} layers");
 
     public static string Combos => T("コンボ", "Combos");
+
+    // ---- 設定画面 ----
+
+    public static string SettingsTitle => T("設定", "Settings");
+
+    public static string PageKeyboard => T("キーボード", "Keyboard");
+    public static string PageDisplay => T("表示", "Display");
+    public static string PageSync => T("レイヤー追従", "Layer sync");
+    public static string PageShortcuts => T("ショートカット", "Shortcuts");
+    public static string PageGeneral => T("全般", "General");
+
+    // キーボード
+    public static string SampleNote =>
+        T("いまはサンプルのキーボード（Pyuron）を表示しています。自分のキーマップ（.keymap）を選んでください。",
+          "You are looking at a sample keyboard (Pyuron). Choose your own keymap (.keymap).");
+
+    public static string SectionKeymap => T("読み込むファイル", "Files");
+    public static string KeymapFileLabel => T("キーマップ", "Keymap");
+    public static string LayoutFileLabel => T("物理レイアウト", "Physical layout");
+    public static string Browse => T("選ぶ…", "Browse…");
+    public static string UseKeymapLayout => T("キーマップから探す", "Find in keymap");
+    public static string SampleKeymap => T("サンプル（Pyuron）", "Sample (Pyuron)");
+    public static string LayoutFromKeymap => T("キーマップと同じファイルから探す", "Looked up in the keymap file");
+    public static string ChooseKeymap => T("キーマップを選ぶ", "Choose a keymap");
+    public static string ChooseLayout => T("物理レイアウトを選ぶ", "Choose the physical layout");
+
+    public static string KeymapFilter =>
+        T("ZMK キーマップ (*.keymap)|*.keymap|すべてのファイル (*.*)|*.*",
+          "ZMK keymap (*.keymap)|*.keymap|All files (*.*)|*.*");
+
+    public static string LayoutFilter =>
+        T("devicetree (*.dtsi;*.overlay;*.keymap)|*.dtsi;*.overlay;*.keymap|すべてのファイル (*.*)|*.*",
+          "Devicetree (*.dtsi;*.overlay;*.keymap)|*.dtsi;*.overlay;*.keymap|All files (*.*)|*.*");
+
+    public static string LayoutNeeded =>
+        T("このキーマップにはキーの並び（物理レイアウト）が含まれていません。続けて、シールドの .dtsi を選んでください。",
+          "This keymap does not describe where the keys are (physical layout). Next, choose your shield's .dtsi file.");
+
+    public static string SectionHostLayout => T("PC のキーボード配列", "Keyboard layout on this PC");
+    public static string HostJis => T("日本語配列（JIS）", "Japanese (JIS)");
+    public static string HostUs => T("英語配列（US）", "English (US)");
+
+    public static string HostLayoutNote =>
+        T("キーボードが送るキーは同じでも、PC の配列設定によって出る記号が変わります。Windows の設定に合わせてください。",
+          "The same key can type different symbols depending on this PC's layout. Match your Windows setting.");
+
+    public static string SectionLayerNames => T("レイヤー名", "Layer names");
+    public static string LayerNamesNote => T("空にすると、キーマップに書かれた名前に戻ります。", "Leave empty to use the name from the keymap.");
+    public static string SampleCannotChange => T("サンプルのキーマップでは変更できません。", "Cannot be changed for the sample keymap.");
+
+    public static string SectionWarnings => T("読み込みの警告", "Loading warnings");
+    public static string NoWarnings => T("警告はありません。", "No warnings.");
+
+    // 表示
+    public static string SectionShowWhen => T("表示するとき", "When to show");
+    public static string SectionLook => T("見た目", "Appearance");
+    public static string SizeLabel => T("大きさ", "Size");
+    public static string OpacityLabel => T("不透明度", "Opacity");
+    public static string PositionLabel => T("位置", "Position");
+    public static string MarginLabel => T("画面端からの余白", "Distance from the screen edge");
+    public static string SectionPreview => T("プレビュー", "Preview");
+
+    public static string PositionName(string position) => position switch
+    {
+        "BottomLeft" => T("下・左", "Bottom left"),
+        "BottomRight" => T("下・右", "Bottom right"),
+        "TopCenter" => T("上・中央", "Top center"),
+        "TopLeft" => T("上・左", "Top left"),
+        "TopRight" => T("上・右", "Top right"),
+        "Center" => T("画面の中央", "Center of the screen"),
+        _ => T("下・中央", "Bottom center"),
+    };
+
+    // レイヤー追従
+    public static string SyncExplain =>
+        T("キーボードがレイヤーに入るときに送る合図キー（F13〜F24）を受け取って、表示を切り替えます。そのためにキーボード側の設定変更が必要です。",
+          "When the keyboard enters a layer it sends a signal key (F13–F24), and the overlay follows it. This needs a change on the keyboard side.");
+
+    public static string SyncEnabled => T("キーボードのレイヤーに追従する", "Follow the keyboard's layers");
+    public static string SyncHold => T("キーを押しているあいだだけ表示", "Show while the key is held");
+    public static string SyncToggle => T("押すたびに表示と非表示を切り替える", "Toggle on each press");
+    public static string SectionSignalKeys => T("合図キー", "Signal keys");
+    public static string ColumnLayer => T("レイヤー", "Layer");
+    public static string ColumnSignal => T("合図キー", "Signal key");
+    public static string ColumnTest => T("テスト", "Test");
+    public static string NoSignal => T("なし", "None");
+
+    public static string SignalTestHint =>
+        T("キーボードでレイヤーキーを押してみてください。合図を受け取ったレイヤーに ✓ が付きます。",
+          "Press a layer key on your keyboard. Layers whose signal arrived get a ✓.");
+
+    // ショートカット
+    public static string ToggleHotkeyLabel => T("オーバーレイの有効 / 無効", "Enable / disable the overlay");
+
+    public static string HotkeyHint =>
+        T("欄をクリックしてから、使いたい組み合わせを押してください。Esc で取り消し、レイヤーの欄は Delete で割り当てを外します。",
+          "Click a box, then press the combination you want. Esc cancels; Delete removes a layer's shortcut.");
+
+    public static string PressKeys => T("組み合わせを押してください…", "Press a combination…");
+    public static string NeedModifier => T("Ctrl・Alt・Shift・Win のどれかと一緒に押してください", "Hold Ctrl, Alt, Shift or Win with the key");
+    public static string ManualKeys => T("ショートカットでレイヤーを表示する", "Show layers with shortcuts");
+
+    public static string ManualKeysNote =>
+        T("キーボードを書き換えていなくても、手でレイヤーを出せます。数字キーの無いキーボードでは、押しやすい組み合わせに変えてください。",
+          "Lets you show layers by hand, even before changing your keyboard. If your keyboard has no number keys, pick combinations you can press.");
+
+    public static string SectionLayerShortcuts => T("レイヤーを手で表示する", "Show a layer by hand");
+    public static string NoShortcut => T("なし", "None");
+    public static string ResetToDefault => T("既定に戻す", "Reset");
+
+    public static string ShortcutConflict(string spec, string usedFor) =>
+        T($"{spec} は「{usedFor}」に使われています", $"{spec} is already used for \"{usedFor}\"");
+
+    public static string LayerShortcutUse(int layerId) => T($"L{layerId} の表示", $"showing L{layerId}");
+    public static string SignalKeyUse(int layerId) => T($"L{layerId} の合図キー", $"the signal key of L{layerId}");
+
+    // 全般
+    public static string LanguageLabel => T("表示言語", "Language");
+    public static string LanguageAuto => T("自動（Windows に合わせる）", "Automatic (follow Windows)");
+    public static string SectionAbout => T("このアプリについて", "About");
+    public static string ConfigFileLabel => T("設定ファイル", "Settings file");
+    public static string OpenFolder => T("フォルダを開く", "Open folder");
+    public static string VersionLabel => T("バージョン", "Version");
 }
