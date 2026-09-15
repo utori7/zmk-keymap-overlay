@@ -30,6 +30,7 @@ public partial class App : Application, ISettingsHost
     private PhysicalLayout _layout = new();
     private Keymap _keymap = new();
     private IReadOnlyList<string> _warnings = Array.Empty<string>();
+    private LoadedKeymap _loaded = new();
 
     private string _configPath = "";
     private string? _configOverride;
@@ -120,6 +121,7 @@ public partial class App : Application, ISettingsHost
         _layout = loaded.Layout;
         _keymap = loaded.Keymap;
         _warnings = loaded.Warnings;
+        _loaded = loaded;
 
         var window = new SettingsWindow(this)
         {
@@ -189,6 +191,7 @@ public partial class App : Application, ISettingsHost
         _layout = loaded.Layout;
         _keymap = loaded.Keymap;
         _warnings = loaded.Warnings;
+        _loaded = loaded;
 
         _hotKeys = new HotKeyService();
         _overlay = new OverlayController(config, _layout, _keymap);
@@ -288,6 +291,7 @@ public partial class App : Application, ISettingsHost
         _layout = loaded.Layout;
         _keymap = loaded.Keymap;
         _warnings = loaded.Warnings;
+        _loaded = loaded;
 
         _overlay!.Reload(config, _layout, _keymap);
 
@@ -475,6 +479,10 @@ public partial class App : Application, ISettingsHost
     Keymap ISettingsHost.Keymap => _keymap;
 
     IReadOnlyList<string> ISettingsHost.Warnings => _warnings;
+
+    LayoutSource ISettingsHost.LayoutSource => _loaded.LayoutSource;
+
+    string? ISettingsHost.LayoutPath => _loaded.LayoutPath;
 
     bool ISettingsHost.TryApply(AppConfig config, out string? error) => TryApply(config, save: true, out error);
 

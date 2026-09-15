@@ -86,7 +86,7 @@ WPF は `PublishTrimmed` に対応しないため、同梱版のサイズは削�
 | キー | 既定値 | 意味 |
 |---|---|---|
 | `zmk.keymapFile` | なし | `.keymap` を直接読む。指定するとこちらが優先される |
-| `zmk.physicalLayoutFile` | なし | 物理レイアウトを持つ `.dtsi` |
+| `zmk.physicalLayoutFile` | なし | 物理レイアウトを持つ `.dtsi`。省略すると、キーマップのフォルダ以下から探し、無ければキーマップの書き方から推定する |
 | `layoutFile` | `data/layouts/pyuron.json` | 手書き物理レイアウト。config.json からの相対パス |
 | `keymapFile` | `data/keymaps/pyuron.json` | 手書きキーマップ |
 | `keyUnitPx` | `44` | キー 1u のピクセル数。全体の大きさはこれで決まる |

@@ -116,9 +116,14 @@ internal static class UiText
     public static string KeymapFileLabel => T("キーマップ", "Keymap");
     public static string LayoutFileLabel => T("物理レイアウト", "Physical layout");
     public static string Browse => T("選ぶ…", "Browse…");
-    public static string UseKeymapLayout => T("キーマップから探す", "Find in keymap");
+    public static string UseKeymapLayout => T("自動で探す", "Find automatically");
     public static string SampleKeymap => T("サンプル（Pyuron）", "Sample (Pyuron)");
-    public static string LayoutFromKeymap => T("キーマップと同じファイルから探す", "Looked up in the keymap file");
+    public static string LayoutInKeymap => T("キーマップの中に書かれていたもの", "Defined in the keymap");
+    public static string LayoutFoundNearby(string path) => T($"自動で見つけたもの: {path}", $"Found automatically: {path}");
+
+    public static string LayoutGuessedLabel =>
+        T("キーマップの並びから推定（配置が違うときはファイルを選んでください）",
+          "Guessed from the keymap (choose a file if it looks wrong)");
     public static string ChooseKeymap => T("キーマップを選ぶ", "Choose a keymap");
     public static string ChooseLayout => T("物理レイアウトを選ぶ", "Choose the physical layout");
 

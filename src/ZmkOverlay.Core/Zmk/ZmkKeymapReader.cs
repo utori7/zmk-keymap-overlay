@@ -10,8 +10,8 @@ public sealed class ZmkReadOptions
     public string KeymapPath { get; init; } = "";
 
     /// <summary>
-    /// 物理レイアウトを持つファイル。省略時はキーマップ側から探す。
-    /// Pyuron のようにシールドの <c>.dtsi</c> に分かれている構成では必須。
+    /// 物理レイアウトを持つファイル。省略時は、キーマップ自身 → キーマップのフォルダ以下 →
+    /// キーマップの書き方からの推定 の順で探す。
     /// </summary>
     public string? PhysicalLayoutPath { get; init; }
 
@@ -35,6 +35,12 @@ public sealed class ZmkReadResult
     public PhysicalLayout Layout { get; init; } = new();
     public Keymap Keymap { get; init; } = new();
     public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
+
+    /// <summary>物理レイアウトをどこから得たか。</summary>
+    public LayoutSource LayoutSource { get; init; }
+
+    /// <summary>物理レイアウトを読んだファイル。推定したときは null。</summary>
+    public string? LayoutPath { get; init; }
 }
 
 /// <summary>
@@ -47,30 +53,28 @@ public static class ZmkKeymapReader
     private const string CombosCompatible = "zmk,combos";
     private const string KeyAttrsBehavior = "key_physical_attrs";
 
+    /// <summary>キーマップのフォルダ以下で物理レイアウトを探すとき、中身を見るファイルの上限。</summary>
+    private const int MaxLayoutCandidates = 200;
+
     public static ZmkReadResult Read(ZmkReadOptions options)
     {
         var warnings = new List<string>();
 
         var keymapTree = ParseFile(options.KeymapPath, warnings);
 
-        var layoutTree = keymapTree;
-        if (!string.IsNullOrWhiteSpace(options.PhysicalLayoutPath))
-        {
-            var full = Path.GetFullPath(options.PhysicalLayoutPath);
-            if (full != Path.GetFullPath(options.KeymapPath))
-                layoutTree = ParseFile(full, warnings);
-        }
-
-        var layout = ReadPhysicalLayout(layoutTree, warnings)
-                     ?? ReadPhysicalLayout(keymapTree, warnings)
-                     ?? throw new InvalidDataException(Strings.PhysicalLayoutMissing);
-
-        var behaviors = ReadBehaviors(keymapTree, layoutTree);
-
         var keymapNode = Find(keymapTree, KeymapCompatible)
                          ?? throw new InvalidDataException(Strings.KeymapNodeMissing);
 
         var layerNodes = keymapNode.Children;
+
+        // 物理レイアウトの候補はキー数で絞るので、先に最初のレイヤーのキー数を数えておく。
+        var keyCount = layerNodes.Select(n => n.Property("bindings")).FirstOrDefault(p => p is not null) is { } first
+            ? ZmkBinding.Split(first.AllCells).Count
+            : 0;
+
+        var (layout, layoutTree, layoutSource, layoutPath) = ResolveLayout(options, keymapTree, keyCount, warnings);
+
+        var behaviors = ReadBehaviors(keymapTree, layoutTree);
         var layerNames = BuildLayerNames(layerNodes, options.LayerNames);
 
         var formatter = new BindingFormatter(
@@ -115,7 +119,108 @@ public static class ZmkKeymapReader
 
         keymap.Combos.AddRange(ReadCombos(keymapTree, formatter));
 
-        return new ZmkReadResult { Layout = layout, Keymap = keymap, Warnings = warnings };
+        return new ZmkReadResult
+        {
+            Layout = layout,
+            Keymap = keymap,
+            Warnings = warnings,
+            LayoutSource = layoutSource,
+            LayoutPath = layoutPath,
+        };
+    }
+
+    /// <summary>
+    /// 物理レイアウトを次の順で探す。見つけた場所も返し、設定画面で利用者に見せる。
+    ///
+    ///   1. 指定されたファイル
+    ///   2. キーマップ自身
+    ///   3. キーマップのフォルダ以下の .dtsi / .overlay（zmk-config のシールド定義など）
+    ///   4. キーマップの書き方からの推定
+    ///
+    /// 一般の利用者に「シールドの .dtsi を指定してください」と求めるのは難しい。
+    /// ほとんどの zmk-config は 3 で見つかり、見つからなくても 4 でおおよその絵は出せる。
+    /// </summary>
+    private static (PhysicalLayout Layout, DtsNode Tree, LayoutSource Source, string? Path) ResolveLayout(
+        ZmkReadOptions options, DtsNode keymapTree, int keyCount, List<string> warnings)
+    {
+        if (!string.IsNullOrWhiteSpace(options.PhysicalLayoutPath))
+        {
+            var full = Path.GetFullPath(options.PhysicalLayoutPath);
+            var tree = full == Path.GetFullPath(options.KeymapPath) ? keymapTree : ParseFile(full, warnings);
+
+            if (ReadPhysicalLayout(tree, warnings) is { } specified)
+                return (specified, tree, LayoutSource.SpecifiedFile, full);
+        }
+
+        if (ReadPhysicalLayout(keymapTree, warnings) is { } inKeymap)
+            return (inKeymap, keymapTree, LayoutSource.Keymap, Path.GetFullPath(options.KeymapPath));
+
+        if (FindNearKeymap(options.KeymapPath, keyCount) is { } nearby)
+            return (nearby.Layout, nearby.Tree, LayoutSource.FoundNearby, nearby.Path);
+
+        if (keyCount > 0 && LayoutGuesser.Guess(File.ReadAllText(options.KeymapPath), keyCount) is { } guessed)
+        {
+            warnings.Add(Strings.LayoutGuessed);
+            return (guessed, keymapTree, LayoutSource.Guessed, null);
+        }
+
+        throw new InvalidDataException(Strings.PhysicalLayoutMissing);
+    }
+
+    /// <summary>
+    /// zmk-config では、物理レイアウトはシールドの .dtsi（config/boards/shields/...）にあることが多い。
+    /// キーマップのフォルダ以下から、キー数の合うものを探す。
+    ///
+    /// キーマップをダウンロードフォルダのような大きな場所に置かれることもあるので、
+    /// 見に行く深さとファイル数に上限を設けている。
+    /// </summary>
+    private static (PhysicalLayout Layout, DtsNode Tree, string Path)? FindNearKeymap(string keymapPath, int keyCount)
+    {
+        var folder = Path.GetDirectoryName(Path.GetFullPath(keymapPath));
+        if (folder is null || keyCount == 0) return null;
+
+        var enumeration = new EnumerationOptions
+        {
+            RecurseSubdirectories = true,
+            IgnoreInaccessible = true,
+            MaxRecursionDepth = 6,
+        };
+
+        List<string> candidates;
+        try
+        {
+            candidates = Directory.EnumerateFiles(folder, "*.dtsi", enumeration)
+                .Concat(Directory.EnumerateFiles(folder, "*.overlay", enumeration))
+                .Take(MaxLayoutCandidates)
+                .ToList();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+
+        foreach (var path in candidates)
+        {
+            try
+            {
+                // 解析は重いので、物理レイアウトを持っていそうなファイルだけにする。
+                if (!File.ReadAllText(path).Contains(PhysicalLayoutCompatible, StringComparison.Ordinal)) continue;
+
+                // 候補を調べる途中の警告は、採用しなかったファイルのものが混ざるので捨てる。
+                var ignored = new List<string>();
+                var tree = ParseFile(path, ignored);
+
+                if (ReadPhysicalLayout(tree, ignored) is { } layout && layout.Keys.Count == keyCount)
+                    return (layout, tree, path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                           or DtsParseException or InvalidDataException)
+            {
+                // 解釈できないファイルは候補から外すだけ。
+            }
+        }
+
+        return null;
     }
 
     private static DtsNode ParseFile(string path, List<string> warnings)

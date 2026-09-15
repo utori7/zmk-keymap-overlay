@@ -40,3 +40,22 @@ public sealed class PhysicalLayout
         return (w, h);
     }
 }
+
+/// <summary>物理レイアウトをどこから得たか。設定画面で利用者に見せる。</summary>
+public enum LayoutSource
+{
+    /// <summary>設定で指定したファイル。</summary>
+    SpecifiedFile,
+
+    /// <summary>キーマップ自身に書かれていた。</summary>
+    Keymap,
+
+    /// <summary>キーマップのフォルダ以下で見つけた（シールドの .dtsi など）。</summary>
+    FoundNearby,
+
+    /// <summary>キーマップの書き方から推定した。正確とは限らない。</summary>
+    Guessed,
+
+    /// <summary>手書きの JSON。</summary>
+    Json,
+}

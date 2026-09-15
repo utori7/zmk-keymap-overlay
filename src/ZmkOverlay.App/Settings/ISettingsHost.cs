@@ -24,6 +24,12 @@ internal interface ISettingsHost
 
     IReadOnlyList<string> Warnings { get; }
 
+    /// <summary>物理レイアウトをどこから得たか。自動で見つけた・推定した、を画面で見せる。</summary>
+    LayoutSource LayoutSource { get; }
+
+    /// <summary>物理レイアウトを読んだファイル。推定したときは null。</summary>
+    string? LayoutPath { get; }
+
     /// <summary>
     /// キーマップを読めたら保存して反映する。読めなければ何も変えず、理由を返す。
     /// 読めない設定を保存すると、次回起動できなくなるため。

@@ -97,10 +97,16 @@ public static class Strings
         T($"物理レイアウトが見つかりません: {path}", $"Physical layout not found: {path}");
 
     public static string PhysicalLayoutMissing =>
-        T("物理レイアウト（compatible = \"zmk,physical-layout\"）が見つかりません。" +
-          "シールドの .dtsi を physicalLayoutFile に指定してください。",
-          "No physical layout (compatible = \"zmk,physical-layout\") was found. " +
-          "Set physicalLayoutFile to your shield's .dtsi.");
+        T("キーの並び（物理レイアウト）が見つからず、キーマップの書き方からも推定できませんでした。" +
+          "シールドの .dtsi を選んでください。",
+          "Could not find where the keys are (physical layout), and could not guess it from the keymap either. " +
+          "Choose your shield's .dtsi file.");
+
+    public static string LayoutGuessed =>
+        T("キーの並び（物理レイアウト）が見つからないので、キーマップの書き方から推定しました。" +
+          "配置が違う場合は、設定画面でシールドの .dtsi を選んでください。",
+          "The physical layout was not found, so key positions were guessed from how the keymap is written. " +
+          "If they look wrong, choose your shield's .dtsi in Settings.");
 
     public static string KeymapNodeMissing =>
         T("キーマップ（compatible = \"zmk,keymap\"）が見つかりません。",

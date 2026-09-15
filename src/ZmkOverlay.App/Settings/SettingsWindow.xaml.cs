@@ -169,10 +169,18 @@ public partial class SettingsWindow : Window
             KeymapPath.Text = fromZmk ? Resolve(config.Zmk.KeymapFile!) : UiText.SampleKeymap;
             KeymapPath.ToolTip = KeymapPath.Text;
 
+            // 指定が無いときは、どこで見つけたか（または推定したか）を見せる。
+            // 推定だと分からないまま使うと、配置の違いに気づけない。
             var hasLayoutFile = !string.IsNullOrWhiteSpace(config.Zmk.PhysicalLayoutFile);
             LayoutPath.Text = !fromZmk ? UiText.SampleKeymap
                             : hasLayoutFile ? Resolve(config.Zmk.PhysicalLayoutFile!)
-                            : UiText.LayoutFromKeymap;
+                            : _host.LayoutSource switch
+                            {
+                                ZmkOverlay.Core.Model.LayoutSource.Keymap => UiText.LayoutInKeymap,
+                                ZmkOverlay.Core.Model.LayoutSource.FoundNearby => UiText.LayoutFoundNearby(_host.LayoutPath ?? ""),
+                                ZmkOverlay.Core.Model.LayoutSource.Guessed => UiText.LayoutGuessedLabel,
+                                _ => _host.LayoutPath ?? "",
+                            };
             LayoutPath.ToolTip = LayoutPath.Text;
             LayoutBrowse.IsEnabled = fromZmk;
             LayoutAuto.IsEnabled = fromZmk && hasLayoutFile;
