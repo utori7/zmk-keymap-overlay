@@ -118,12 +118,17 @@ public partial class App : Application
 
         _tray = new TrayIcon(
             toggle: ToggleOverlay,
+            showLayer: layerId => _overlay!.ShowManualLayer(layerId),
+            openSettings: OpenSettings,
             reload: Reload,
             exit: () => Shutdown(),
             alwaysVisible: config.IsAlwaysVisible,
             setAlwaysVisible: SetAlwaysVisible,
             runAtLogin: StartupEntry.IsEnabled,
-            setRunAtLogin: SetRunAtLogin);
+            setRunAtLogin: SetRunAtLogin,
+            showWarnings: ShowWarnings);
+
+        _tray.Configure(config.ToggleHotkey.ToString(), _overlay.Layers, config.EnableManualLayerKeys);
 
         RegisterToggleHotKey(config);
         StartLayerSync(config);
@@ -134,7 +139,12 @@ public partial class App : Application
         ReportWarnings();
     }
 
-    private void ToggleOverlay() => ApplyEnabledState(_overlay!.Toggle(), notify: true);
+    /// <summary>
+    /// 常時表示の設定では、切り替えた結果が画面にそのまま出るので通知は要らない。
+    /// 知らせるのは、無効にしても見た目が変わらない「L1 以上のときだけ表示」のときだけ。
+    /// </summary>
+    private void ToggleOverlay() =>
+        ApplyEnabledState(_overlay!.Toggle(), notify: _config is { IsAlwaysVisible: false });
 
     /// <summary>
     /// 有効・無効に付随するものをまとめて合わせる。
@@ -180,23 +190,36 @@ public partial class App : Application
 
         // ZMK のソースを読むと、解釈できなかった箇所が警告として返る。
         // 黙って落とすと「なぜこのキーだけ変なのか」が分からなくなるので出す。
-        _pendingWarnings = loaded.Warnings;
+        _warnings = loaded.Warnings;
 
         return (config, loaded.Layout, loaded.Keymap);
     }
 
-    private IReadOnlyList<string> _pendingWarnings = Array.Empty<string>();
+    private IReadOnlyList<string> _warnings = Array.Empty<string>();
 
-    private void ReportWarnings()
+    /// <summary>最後に読み込んだときの警告をトレイに渡す。0 件ならメニューからも消える。</summary>
+    private void ReportWarnings() => _tray?.ReportWarnings(_warnings);
+
+    /// <summary>設定画面ができるまでのつなぎ。警告をすべてダイアログで見せる。</summary>
+    private static void ShowWarnings(IReadOnlyList<string> warnings) =>
+        MessageBox.Show(
+            string.Join(Environment.NewLine, warnings),
+            $"ZMK Keymap Overlay — {UiText.WarningsTitle}",
+            MessageBoxButton.OK, MessageBoxImage.Warning);
+
+    /// <summary>
+    /// 設定画面ができるまでのつなぎ。設定ファイルを、エクスプローラで選択した状態で開く。
+    /// </summary>
+    private void OpenSettings()
     {
-        if (_pendingWarnings.Count == 0) return;
-
-        _tray?.Notify(
-            UiText.KeymapWarnings(_pendingWarnings.Count),
-            string.Join("\n", _pendingWarnings.Take(5)),
-            System.Windows.Forms.ToolTipIcon.Warning);
-
-        _pendingWarnings = Array.Empty<string>();
+        try
+        {
+            System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{_configPath}\"");
+        }
+        catch (Exception ex)
+        {
+            _tray?.Notify(UiText.CannotOpenSettings, ex.Message, System.Windows.Forms.ToolTipIcon.Warning);
+        }
     }
 
     private void Reload()
@@ -208,6 +231,7 @@ public partial class App : Application
             _config = config;
             _overlay!.Reload(config, layout, keymap);
             _tray?.SyncAlwaysVisible(config.IsAlwaysVisible);
+            _tray?.Configure(config.ToggleHotkey.ToString(), _overlay.Layers, config.EnableManualLayerKeys);
 
             _toggleRegistration?.Dispose();
             RegisterToggleHotKey(config);
@@ -217,8 +241,8 @@ public partial class App : Application
 
             ApplyEnabledState(_overlay.IsEnabled, notify: false);
 
-            if (_pendingWarnings.Count > 0) ReportWarnings();
-            else _tray?.Notify(UiText.Reloaded, _configPath);
+            // 成功したことはバルーンで知らせない。画面の中身が変わるので見れば分かる。
+            ReportWarnings();
         }
         catch (Exception ex)
         {

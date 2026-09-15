@@ -14,7 +14,6 @@ internal static class UiText
     public static string UnexpectedError => T("予期しないエラー", "Unexpected error");
     public static string StartupFailed => T("起動できませんでした", "Could not start");
     public static string ReloadFailed => T("再読み込みに失敗しました", "Reload failed");
-    public static string Reloaded => T("再読み込みしました", "Reloaded");
 
     public static string ErrorDetails(string logPath) => T($"詳細: {logPath}", $"Details: {logPath}");
 
@@ -50,8 +49,15 @@ internal static class UiText
     public static string RunAtLoginTip =>
         T("スタートアップフォルダにショートカットを置きます。", "Places a shortcut in your Startup folder.");
 
-    public static string ReloadAll => T("設定とキーマップを再読み込み", "Reload settings and keymap");
+    public static string ShowLayer => T("レイヤーを表示", "Show layer");
+    public static string Settings => T("設定…", "Settings…");
+    public static string ReloadKeymap => T("キーマップを再読み込み", "Reload keymap");
     public static string Exit => T("終了", "Exit");
+
+    public static string ViewWarnings(int count) => T($"警告 {count} 件を見る…", $"View {count} warning(s)…");
+    public static string ClickForAll => T("クリックですべて表示", "Click to see all");
+    public static string WarningsTitle => T("キーマップの警告", "Keymap warnings");
+    public static string CannotOpenSettings => T("設定ファイルを開けません", "Cannot open the settings file");
 
     public static string StateEnabled => T("有効", "enabled");
     public static string StateDisabled => T("無効", "disabled");

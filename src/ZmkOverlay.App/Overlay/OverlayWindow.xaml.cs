@@ -48,6 +48,10 @@ public partial class OverlayWindow : Window
     public IReadOnlyList<int> LayerIds =>
         _keymap.Layers.Select(l => l.Index).ToList();
 
+    /// <summary>レイヤー番号と表示名。トレイのメニューに並べる。</summary>
+    public IReadOnlyList<(int Id, string Name)> Layers =>
+        _keymap.Layers.Select(l => (l.Index, l.Name)).ToList();
+
     /// <summary>いま表示している ZMK レイヤー番号。</summary>
     public int CurrentLayerId => _keymap.Layers[_slot].Index;
 

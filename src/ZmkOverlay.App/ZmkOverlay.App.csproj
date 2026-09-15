@@ -11,6 +11,9 @@
     <UseWindowsForms>true</UseWindowsForms>
 
     <ApplicationManifest>app.manifest</ApplicationManifest>
+
+    <!-- tools/make-icon.ps1 で生成する。直接編集しない。 -->
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <AssemblyName>ZmkOverlay</AssemblyName>
     <RootNamespace>ZmkOverlay.App</RootNamespace>
 
@@ -27,6 +30,14 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ZmkOverlay.Core\ZmkOverlay.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      トレイ用。exe のアイコン（ApplicationIcon）から取り出すと 32px の面しか得られず、
+      高 DPI のトレイでぼやけるので、同じファイルを埋め込んで大きさの合う面を選ぶ。
+    -->
+    <EmbeddedResource Include="Assets\app.ico" LogicalName="ZmkOverlay.app.ico" />
   </ItemGroup>
 
   <ItemGroup>

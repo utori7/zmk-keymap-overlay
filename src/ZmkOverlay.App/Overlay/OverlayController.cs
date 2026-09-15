@@ -50,6 +50,8 @@ internal sealed class OverlayController
 
     public IReadOnlyList<int> LayerIds => _window.LayerIds;
 
+    public IReadOnlyList<(int Id, string Name)> Layers => _window.Layers;
+
     public IReadOnlyList<(int LayerId, string SignalKey)> SignalKeys => _window.SignalKeys;
 
     public bool IsVisible => _window.IsVisible;
