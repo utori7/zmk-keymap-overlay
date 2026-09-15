@@ -23,7 +23,10 @@ public sealed class ZmkReadOptions
     /// <summary>レイヤー番号 → 表示名の差し替え。</summary>
     public IReadOnlyDictionary<int, string>? LayerNames { get; init; }
 
-    /// <summary>レイヤー番号 → 合図キー。</summary>
+    /// <summary>
+    /// レイヤー番号 → 合図キー。キーマップから読み取れた値より優先する。
+    /// 空文字は「このレイヤーは追従しない」。
+    /// </summary>
     public IReadOnlyDictionary<int, string>? SignalKeys { get; init; }
 }
 
@@ -75,10 +78,17 @@ public static class ZmkKeymapReader
 
         var keymap = new Keymap { Layout = layout.Name };
 
+        var layerBindings = layerNodes
+            .Select(n => n.Property("bindings") is { } p ? ZmkBinding.Split(p.AllCells) : null)
+            .ToList();
+
+        var detectedSignals = DetectSignalKeys(
+            layerBindings.Where(b => b is not null).SelectMany(b => b!), behaviors);
+
         for (var index = 0; index < layerNodes.Count; index++)
         {
             var node = layerNodes[index];
-            var bindings = node.Property("bindings");
+            var bindings = layerBindings[index];
 
             if (bindings is null)
             {
@@ -86,20 +96,20 @@ public static class ZmkKeymapReader
                 continue;
             }
 
-            var keys = ZmkBinding.Split(bindings.AllCells).Select(formatter.Format).ToList();
+            var keys = bindings.Select(formatter.Format).ToList();
 
             if (keys.Count != layout.Keys.Count)
                 warnings.Add(Strings.LayerKeyCountDiffers(node.Name, keys.Count, layout.Keys.Count));
+
+            var detected = detectedSignals.TryGetValue(index, out var found) ? found : null;
 
             keymap.Layers.Add(new Layer
             {
                 Index = index,
                 Name = layerNames[index],
                 Keys = keys,
-                SignalKey = options.SignalKeys is not null
-                            && options.SignalKeys.TryGetValue(index, out var signal)
-                    ? signal
-                    : null,
+                DetectedSignalKey = detected,
+                SignalKey = ChooseSignalKey(options.SignalKeys, index, detected),
             });
         }
 
@@ -220,6 +230,100 @@ public static class ZmkKeymapReader
         }
 
         return result;
+    }
+
+    // ---- 合図キー ----
+
+    /// <summary>設定に書かれていればそれを優先する。空文字は「このレイヤーは追従しない」。</summary>
+    private static string? ChooseSignalKey(IReadOnlyDictionary<int, string>? configured, int layer, string? detected)
+    {
+        if (configured is not null && configured.TryGetValue(layer, out var value))
+            return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+        return detected;
+    }
+
+    /// <summary>
+    /// キーマップに仕込まれた合図キーを探す。設定に対応表を手で書かなくて済むようにするため。
+    ///
+    /// 合図キーは、レイヤーに入るマクロの中で押される。zmk/layer-signal.dtsi も、
+    /// アプリが生成する書き換えも、この形をしている。
+    ///
+    ///   &lt;&amp;macro_press &amp;macro_param_1to1 &amp;mo MACRO_PLACEHOLDER&gt;, &lt;&amp;macro_press &amp;kp F13&gt;, ...
+    ///
+    /// マクロはキーマップから直接呼ばれるか、hold-tap の hold 側から呼ばれる。
+    /// レイヤー番号はマクロの引数で渡されるので、呼び出し側の値から決める。
+    /// </summary>
+    internal static Dictionary<int, string> DetectSignalKeys(
+        IEnumerable<ZmkBinding> bindings, IReadOnlyDictionary<string, BehaviorInfo> behaviors)
+    {
+        var found = new Dictionary<int, string>();
+
+        foreach (var binding in bindings)
+        {
+            foreach (var (macro, argument) in MacroCalls(binding, behaviors))
+            {
+                if (SignalOf(macro, argument) is { } signal)
+                    found.TryAdd(signal.Layer, signal.Key);
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>そのキーを押したときに呼ばれるマクロと、マクロに渡る第 1 引数。</summary>
+    private static IEnumerable<(BehaviorInfo Macro, string? Argument)> MacroCalls(
+        ZmkBinding binding, IReadOnlyDictionary<string, BehaviorInfo> behaviors)
+    {
+        if (!behaviors.TryGetValue(binding.Behavior, out var info)) yield break;
+
+        if (info.IsMacro)
+        {
+            yield return (info, binding.Param(0));
+            yield break;
+        }
+
+        // hold-tap は第 1 引数を hold 側に、第 2 引数を tap 側に渡す。
+        if (info.IsHoldTap
+            && info.Bindings.Count >= 1
+            && behaviors.TryGetValue(info.Bindings[0].Behavior, out var hold)
+            && hold.IsMacro)
+        {
+            yield return (hold, binding.Param(0));
+        }
+    }
+
+    private static (int Layer, string Key)? SignalOf(BehaviorInfo macro, string? argument)
+    {
+        string? key = null;
+        int? layer = null;
+
+        foreach (var inner in macro.Bindings)
+        {
+            if (inner.Behavior == "kp" && inner.Param(0) is { } code && IsSignalKey(code))
+                key ??= code.Trim().ToUpperInvariant();
+
+            if (inner.Behavior == "mo" && inner.Param(0) is { } target)
+            {
+                // 番号が書いてあればそれ。MACRO_PLACEHOLDER なら呼び出し側の引数。
+                var value = DtsValue.TryParseNumber(target, out _) ? target : argument;
+                if (value is not null && DtsValue.TryParseNumber(value, out var number))
+                    layer ??= number;
+            }
+        }
+
+        return key is not null && layer is not null ? (layer.Value, key) : null;
+    }
+
+    /// <summary>F13〜F24。普通のキーボードに無く、他のアプリも使わないので合図に使える。</summary>
+    private static bool IsSignalKey(string code)
+    {
+        var name = code.Trim();
+
+        return name.Length == 3
+               && (name[0] == 'F' || name[0] == 'f')
+               && int.TryParse(name[1..], out var n)
+               && n is >= 13 and <= 24;
     }
 
     // ---- レイヤー名 ----

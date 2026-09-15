@@ -183,6 +183,13 @@ internal static class UiText
     public static string ColumnTest => T("テスト", "Test");
     public static string NoSignal => T("なし", "None");
 
+    public static string SignalAutoNote =>
+        T("キーマップに合図キーが仕込まれていれば、自動で読み取って表に入ります。ここで変えると、そのレイヤーだけ設定が優先されます。",
+          "Signal keys built into your keymap are detected and filled in automatically. Changing one here overrides it for that layer.");
+
+    public static string DetectedFromKeymap(string key) =>
+        T($"キーマップから読み取った値: {key}", $"Detected in the keymap: {key}");
+
     public static string SignalTestHint =>
         T("キーボードでレイヤーキーを押してみてください。合図を受け取ったレイヤーに ✓ が付きます。",
           "Press a layer key on your keyboard. Layers whose signal arrived get a ✓.");

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Windows.Threading;
 using ZmkOverlay.App.Overlay;
 using ZmkOverlay.App.Text;
@@ -26,11 +27,13 @@ internal sealed class LayerSyncService : IDisposable
     private readonly DispatcherTimer _timer;
     private readonly List<IDisposable> _registrations = new();
 
-    /// <summary>いま押されているとみなしている合図キー。0 なら追従していない。</summary>
-    private int _activeVk;
-
-    private bool _downObserved;
-    private readonly Stopwatch _sinceTrigger = new();
+    /// <summary>
+    /// 押されているとみなしている合図キー。後から押したものほど後ろにあり、表示するのは末尾のレイヤー。
+    ///
+    /// 1 つだけ覚える作りだと、L1 を押したまま L3 に入って L3 のキーを離したとき、
+    /// L1 のキーはまだ押されているのにオーバーレイが消えてしまう。
+    /// </summary>
+    private readonly List<HeldSignal> _held = new();
 
     private bool _disposed;
 
@@ -84,7 +87,7 @@ internal sealed class LayerSyncService : IDisposable
     public void Stop()
     {
         _timer.Stop();
-        _activeVk = 0;
+        _held.Clear();
 
         foreach (var registration in _registrations) registration.Dispose();
         _registrations.Clear();
@@ -101,9 +104,8 @@ internal sealed class LayerSyncService : IDisposable
             return;
         }
 
-        _activeVk = vk;
-        _downObserved = false;
-        _sinceTrigger.Restart();
+        _held.RemoveAll(h => h.Vk == vk);
+        _held.Add(new HeldSignal(layerId, vk));
 
         _overlay.BeginTransient(layerId);
         _timer.Start();
@@ -111,25 +113,42 @@ internal sealed class LayerSyncService : IDisposable
 
     private void OnTick(object? sender, EventArgs e)
     {
-        if (_activeVk == 0)
+        if (_held.Count == 0)
         {
             _timer.Stop();
             return;
         }
 
-        if (NativeMethods.IsKeyDown(_activeVk))
+        var shown = _held[^1];
+        var anyReleased = false;
+
+        foreach (var held in _held.ToList())
         {
-            _downObserved = true;
+            if (NativeMethods.IsKeyDown(held.Vk))
+            {
+                held.DownObserved = true;
+                continue;
+            }
+
+            // 押下を一度も見ていないうちは、取りこぼしと区別できない。
+            // 猶予のあいだは待ち、それを過ぎたら離されたものとして畳む。
+            if (!held.DownObserved && held.SinceTrigger.ElapsedMilliseconds < _config.GraceMs) continue;
+
+            _held.Remove(held);
+            anyReleased = true;
+        }
+
+        if (!anyReleased) return;
+
+        if (_held.Count == 0)
+        {
+            _timer.Stop();
+            _overlay.EndTransient();
             return;
         }
 
-        // 押下を一度も見ていないうちは、取りこぼしと区別できない。
-        // 猶予のあいだは待ち、それを過ぎたら離されたものとして畳む。
-        if (!_downObserved && _sinceTrigger.ElapsedMilliseconds < _config.GraceMs) return;
-
-        _timer.Stop();
-        _activeVk = 0;
-        _overlay.EndTransient();
+        // 上に重ねたレイヤーを離しても、下のレイヤーのキーはまだ押されている。そちらの表示に戻す。
+        if (_held[^1] != shown) _overlay.BeginTransient(_held[^1].LayerId);
     }
 
     public void Dispose()
@@ -139,5 +158,22 @@ internal sealed class LayerSyncService : IDisposable
 
         _timer.Tick -= OnTick;
         Stop();
+    }
+
+    private sealed class HeldSignal
+    {
+        public HeldSignal(int layerId, int vk)
+        {
+            LayerId = layerId;
+            Vk = vk;
+        }
+
+        public int LayerId { get; }
+
+        public int Vk { get; }
+
+        public bool DownObserved { get; set; }
+
+        public Stopwatch SinceTrigger { get; } = Stopwatch.StartNew();
     }
 }

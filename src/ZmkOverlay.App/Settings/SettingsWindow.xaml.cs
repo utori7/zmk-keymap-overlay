@@ -211,8 +211,7 @@ public partial class SettingsWindow : Window
             SyncToggleRadio.IsChecked = !config.LayerSync.IsHoldMode;
             SyncHoldRadio.IsEnabled = SyncToggleRadio.IsEnabled = config.LayerSync.Enabled;
 
-            SignalNote.Visibility = fromZmk ? Visibility.Collapsed : Visibility.Visible;
-            SignalNote.Text = UiText.SampleCannotChange;
+            SignalNote.Text = fromZmk ? UiText.SignalAutoNote : UiText.SampleCannotChange;
             BuildSignalList(fromZmk && config.LayerSync.Enabled);
 
             // ショートカット。入力中は「押してください」を上書きしない。
@@ -328,12 +327,22 @@ public partial class SettingsWindow : Window
             var selected = Array.FindIndex(SignalKeyChoices, k => k.Equals(layer.SignalKey, StringComparison.OrdinalIgnoreCase));
             combo.SelectedIndex = selected + 1;
 
+            if (layer.DetectedSignalKey is { } detectedKey)
+                combo.ToolTip = UiText.DetectedFromKeymap(detectedKey);
+
+            var detected = layer.DetectedSignalKey;
+
             combo.SelectionChanged += (_, _) => Apply(config =>
             {
                 var key = id.ToString(CultureInfo.InvariantCulture);
+                var chosen = combo.SelectedIndex <= 0 ? null : SignalKeyChoices[combo.SelectedIndex - 1];
 
-                if (combo.SelectedIndex <= 0) config.Zmk.SignalKeys.Remove(key);
-                else config.Zmk.SignalKeys[key] = SignalKeyChoices[combo.SelectedIndex - 1];
+                // キーマップから読み取れた値と同じなら上書きを持たない。
+                // 持ってしまうと、あとでファームを書き換えたときに追従しなくなる。
+                if (string.Equals(chosen, detected, StringComparison.OrdinalIgnoreCase))
+                    config.Zmk.SignalKeys.Remove(key);
+                else
+                    config.Zmk.SignalKeys[key] = chosen ?? "";   // 空文字は「追従しない」
             });
 
             Grid.SetColumn(combo, 1);

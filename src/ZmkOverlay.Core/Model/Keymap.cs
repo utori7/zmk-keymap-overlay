@@ -50,8 +50,12 @@ public sealed class Layer
     /// <summary>
     /// このレイヤーに入ったことを PC 側へ知らせる合図キー（例 "F13"）。
     /// null なら連動対象外。詳細は DESIGN.md「レイヤー連動（案A）」。
+    /// 設定に書かれていればその値、無ければ <see cref="DetectedSignalKey"/>。
     /// </summary>
     public string? SignalKey { get; set; }
+
+    /// <summary>キーマップの中身から読み取れた合図キー。設定で上書きされていても変わらない。</summary>
+    public string? DetectedSignalKey { get; set; }
 }
 
 public sealed class Combo

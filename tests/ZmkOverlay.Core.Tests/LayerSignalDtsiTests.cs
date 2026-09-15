@@ -121,6 +121,43 @@ public class LayerSignalDtsiTests : IDisposable
         }
     }
 
+    [Fact]
+    public void SignalKeysAreReadFromTheKeymapItself()
+    {
+        // 対応表を設定に手で書かなくても、キーマップに仕込んだマクロから分かる。
+        var layers = ReadPatched().Keymap.Layers;
+
+        Assert.Null(layers[0].SignalKey);
+        Assert.Equal("F13", layers[1].SignalKey);
+        Assert.Equal("F14", layers[2].SignalKey);
+        Assert.Equal("F15", layers[3].SignalKey);
+        Assert.Null(layers[4].SignalKey);   // MOUSE はキー押下で入らないので合図が無い
+        Assert.Equal("F16", layers[5].SignalKey);
+    }
+
+    [Fact]
+    public void ConfiguredSignalKeysOverrideDetectedOnes()
+    {
+        var layers = ZmkKeymapReader.Read(new ZmkReadOptions
+        {
+            KeymapPath = Path.Combine(_directory, "config", "Pyuron.keymap"),
+            PhysicalLayoutPath = Path.Combine(
+                _directory, "config", "boards", "shields", "Pyuron", "Pyuron.dtsi"),
+            SignalKeys = new Dictionary<int, string> { [1] = "F20", [2] = "" },
+        }).Keymap.Layers;
+
+        Assert.Equal("F20", layers[1].SignalKey);
+        Assert.Equal("F13", layers[1].DetectedSignalKey);   // 検出結果は上書きしても残る
+        Assert.Null(layers[2].SignalKey);                   // 空文字は「追従しない」
+        Assert.Equal("F15", layers[3].SignalKey);           // 書いていないレイヤーは検出どおり
+    }
+
+    [Fact]
+    public void KeymapWithoutSignalMacrosHasNoSignalKeys()
+    {
+        Assert.All(ReadOriginal().Keymap.Layers, layer => Assert.Null(layer.DetectedSignalKey));
+    }
+
     public void Dispose()
     {
         try

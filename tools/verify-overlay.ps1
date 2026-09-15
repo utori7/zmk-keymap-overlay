@@ -195,9 +195,31 @@ function Test-ManualLayer {
     ''
 }
 
+function Test-StackedLayers {
+    # Entering a second layer while the first layer key is still held, then
+    # releasing only the second key, must fall back to the first layer --
+    # not hide the overlay while a layer key is still down.
+    $p = StartApp 'layersOnly'
+
+    '  [layersOnly] stacked layer keys'
+    Start-Process $probe -ArgumentList '--hold','F13','4500' -WindowStyle Hidden
+    Start-Sleep -Milliseconds 800
+    Start-Process $probe -ArgumentList '--hold','F14','800' -WindowStyle Hidden
+    Start-Sleep -Milliseconds 800
+    Check 'holding F13 and F14'              $true
+    Start-Sleep -Milliseconds 1300
+    Check 'F14 released, F13 still held'     $true
+    Start-Sleep -Milliseconds 2800
+    Check 'both released'                    $false
+
+    StopApp $p
+    ''
+}
+
 Test-Mode 'layersOnly'
 Test-Mode 'always'
 Test-ManualLayer
+Test-StackedLayers
 
 Remove-Item $cfg -ErrorAction SilentlyContinue
 
