@@ -7,7 +7,9 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Threading.Tasks;
 using System.Windows.Threading;
+using ZmkOverlay.Core.Zmk;
 using ZmkOverlay.App.Render;
 using ZmkOverlay.App.Text;
 using ZmkOverlay.Core.Config;
@@ -56,6 +58,12 @@ public partial class SettingsWindow : Window
 
     /// <summary>レイヤーごとのショートカット入力欄。Tag にレイヤー番号を持つ。</summary>
     private readonly List<TextBox> _layerShortcutBoxes = new();
+
+    private readonly GitHubSource _gitHub = new();
+
+    /// <summary>「取得」で一覧を得たリポジトリ。キーマップが複数あって選んでもらうあいだ覚えておく。</summary>
+    private GitHubLocation? _gitHubLocation;
+    private GitHubTree? _gitHubTree;
 
     private IDisposable? _hotkeySuspension;
     private UiLanguage? _textsLanguage;
@@ -166,6 +174,14 @@ public partial class SettingsWindow : Window
 
             // キーボード
             SampleNote.Visibility = fromZmk ? Visibility.Collapsed : Visibility.Visible;
+
+            var github = config.Zmk.IsGitHub ? config.Zmk.GitHub : null;
+            GitHubRefresh.Visibility = github is not null ? Visibility.Visible : Visibility.Collapsed;
+            if (github is not null)
+            {
+                GitHubStatus.Text = UiText.GitHubInUse(github.Repository, github.Branch, github.KeymapPath ?? "");
+                if (string.IsNullOrWhiteSpace(GitHubUrl.Text)) GitHubUrl.Text = $"https://github.com/{github.Repository}";
+            }
             KeymapPath.Text = fromZmk ? Resolve(config.Zmk.KeymapFile!) : UiText.SampleKeymap;
             KeymapPath.ToolTip = KeymapPath.Text;
 
@@ -455,6 +471,12 @@ public partial class SettingsWindow : Window
             NavGeneral.Content = UiText.PageGeneral;
 
             SampleNote.Text = UiText.SampleNote;
+            GitHubSection.Text = UiText.SectionGitHub;
+            GitHubNote.Text = UiText.GitHubNote;
+            GitHubFetch.Content = UiText.GitHubFetch;
+            GitHubKeymapLabel.Text = UiText.GitHubKeymapLabel;
+            GitHubUse.Content = UiText.GitHubUse;
+            GitHubRefresh.Content = UiText.GitHubRefresh;
             KeymapSection.Text = UiText.SectionKeymap;
             KeymapFileLabel.Text = UiText.KeymapFileLabel;
             KeymapBrowse.Content = UiText.Browse;
@@ -543,6 +565,106 @@ public partial class SettingsWindow : Window
         UpdatePageTitle();
     }
 
+    // ---- GitHub ----
+
+    private async void OnGitHubFetch(object sender, RoutedEventArgs e)
+    {
+        if (!GitHubLocation.TryParse(GitHubUrl.Text, out var location))
+        {
+            ShowError(UiText.GitHubInvalidUrl);
+            return;
+        }
+
+        await RunGitHubAsync(async () =>
+        {
+            var tree = await _gitHub.ListAsync(location);
+            var candidates = tree.KeymapPaths;
+
+            if (candidates.Count == 0)
+            {
+                ShowError(Strings.GitHubNoKeymap(location.FullName));
+                return;
+            }
+
+            _gitHubLocation = location;
+            _gitHubTree = tree;
+
+            // URL がキーマップのファイルそのものを指していれば、それを使う。
+            if (location.Path is { } path && candidates.Contains(path))
+            {
+                await UseGitHubKeymapAsync(path);
+                return;
+            }
+
+            if (candidates.Count == 1)
+            {
+                await UseGitHubKeymapAsync(candidates[0]);
+                return;
+            }
+
+            GitHubKeymapBox.ItemsSource = candidates;
+            GitHubKeymapBox.SelectedIndex = 0;
+            GitHubChoice.Visibility = Visibility.Visible;
+            GitHubStatus.Text = UiText.GitHubChooseKeymap(candidates.Count);
+        });
+    }
+
+    private async void OnGitHubUse(object sender, RoutedEventArgs e)
+    {
+        if (GitHubKeymapBox.SelectedItem is not string path) return;
+
+        await RunGitHubAsync(() => UseGitHubKeymapAsync(path));
+    }
+
+    private async void OnGitHubRefresh(object sender, RoutedEventArgs e)
+    {
+        await RunGitHubAsync(async () =>
+        {
+            var next = _host.Config.Clone();
+            await GitHubSync.RefreshAsync(next, _host.ConfigPath, _gitHub);
+            ShowError(_host.TryApply(next, out var error) ? null : error);
+        });
+    }
+
+    private async Task UseGitHubKeymapAsync(string keymapPath)
+    {
+        if (_gitHubLocation is null || _gitHubTree is null) return;
+
+        var next = _host.Config.Clone();
+        await GitHubSync.UseAsync(next, _host.ConfigPath, _gitHub, _gitHubLocation, _gitHubTree, keymapPath);
+
+        GitHubChoice.Visibility = Visibility.Collapsed;
+        ShowError(_host.TryApply(next, out var error) ? null : error);
+    }
+
+    /// <summary>通信中はボタンを押せなくし、失敗したら理由を出す。</summary>
+    private async Task RunGitHubAsync(Func<Task> work)
+    {
+        GitHubFetch.IsEnabled = GitHubUse.IsEnabled = GitHubRefresh.IsEnabled = false;
+        GitHubStatus.Text = UiText.GitHubFetching;
+        ShowError(null);
+
+        try
+        {
+            await work();
+        }
+        catch (Exception ex) when (ex is GitHubSourceException or IOException or UnauthorizedAccessException)
+        {
+            ShowError(ex.Message);
+        }
+        finally
+        {
+            GitHubFetch.IsEnabled = GitHubUse.IsEnabled = GitHubRefresh.IsEnabled = true;
+
+            // 反映が済んでいればそちらが表示を入れ直す。済んでいなければ「取得しています」を消す。
+            if (GitHubStatus.Text == UiText.GitHubFetching)
+                GitHubStatus.Text = _host.Config.Zmk.IsGitHub
+                    ? UiText.GitHubInUse(_host.Config.Zmk.GitHub.Repository, _host.Config.Zmk.GitHub.Branch,
+                        _host.Config.Zmk.GitHub.KeymapPath ?? "")
+                    : "";
+        }
+    }
+
     // ---- キーボード ----
 
     private void OnBrowseKeymap(object sender, RoutedEventArgs e)
@@ -554,6 +676,7 @@ public partial class SettingsWindow : Window
         var next = _host.Config.Clone();
         next.Zmk.KeymapFile = keymap;
         next.Zmk.PhysicalLayoutFile = null;
+        next.Zmk.Source = "local";   // GitHub から読んでいた場合も、PC のファイルに切り替える
 
         if (_host.TryApply(next, out var error))
         {

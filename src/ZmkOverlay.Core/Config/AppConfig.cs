@@ -64,6 +64,19 @@ public sealed class LayerSyncConfig
     public bool IsHoldMode => !string.Equals(Mode, "toggle", StringComparison.OrdinalIgnoreCase);
 }
 
+/// <summary>GitHub の zmk-config から読むときの取得元。</summary>
+public sealed class GitHubSourceConfig
+{
+    /// <summary>"owner/name"。</summary>
+    public string Repository { get; set; } = "";
+
+    /// <summary>ブランチ。空なら既定のブランチ。</summary>
+    public string? Branch { get; set; }
+
+    /// <summary>リポジトリ内のキーマップのパス（例 "config/corne.keymap"）。</summary>
+    public string? KeymapPath { get; set; }
+}
+
 /// <summary>
 /// ZMK のソースから直接読むときの設定。<see cref="KeymapFile"/> が空なら
 /// 手書き JSON（<see cref="AppConfig.LayoutFile"/> ほか）を使う。
@@ -87,6 +100,22 @@ public sealed class ZmkSourceConfig
 
     /// <summary>レイヤー番号 → 合図キー。例 <c>{"1": "F13"}</c>。</summary>
     public Dictionary<string, string> SignalKeys { get; set; } = new();
+
+    /// <summary>
+    /// どこから読むか。"local"（既定）は <see cref="KeymapFile"/> をそのまま読む。
+    /// "github" は <see cref="GitHub"/> のリポジトリから取ってきた保存分を読む。
+    /// そのときも <see cref="KeymapFile"/> は保存先を指しているので、読み込み自体は同じ。
+    /// </summary>
+    public string Source { get; set; } = "local";
+
+    /// <summary>GitHub から読むときの取得元。取り直すときに使う。</summary>
+    [JsonPropertyName("github")]
+    public GitHubSourceConfig GitHub { get; set; } = new();
+
+    [JsonIgnore]
+    public bool IsGitHub =>
+        string.Equals(Source, "github", StringComparison.OrdinalIgnoreCase)
+        && !string.IsNullOrWhiteSpace(GitHub.Repository);
 
     /// <summary>
     /// モデルに無いキーを保持しておくための入れ物。設定ファイルには

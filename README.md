@@ -136,6 +136,8 @@ JSON を書き直す必要はない。設定例は [data/config.zmk.example.json
 
 | キー | 意味 |
 |---|---|
+| `zmk.source` | `local`（既定）または `github`。設定画面の「GitHub から読み込む」で取得すると `github` になる |
+| `zmk.github` | GitHub から読むときの取得元（`repository` / `branch` / `keymapPath`）。取り直しに使う |
 | `zmk.labelOverrides` | キーコードの表示差し替え。例 `{"INT4": "かな"}` |
 | `zmk.layerNames` | レイヤー名の差し替え。既定はノード名から作る（`default_layer` → `DEFAULT`） |
 | `zmk.signalKeys` | レイヤー番号 → 合図キー。例 `{"1": "F13"}` |

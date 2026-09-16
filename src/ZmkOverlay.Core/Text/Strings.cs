@@ -122,6 +122,28 @@ public static class Strings
     public static string PhysicalLayoutHasNoKeys =>
         T("physical-layout に keys がありません。", "The physical-layout has no keys.");
 
+    // ---- GitHub ----
+
+    public static string GitHubUnreachable(string detail) =>
+        T($"GitHub に接続できませんでした（{detail}）。ネットワークやプロキシの設定を確認してください。",
+          $"Could not connect to GitHub ({detail}). Check your network or proxy settings.");
+
+    public static string GitHubNotFound(string repository) =>
+        T($"GitHub に {repository} が見つかりません。URL を確認してください。" +
+          "非公開のリポジトリは読めないので、その場合は PC にダウンロードしたファイルを選んでください。",
+          $"{repository} was not found on GitHub. Check the URL. " +
+          "Private repositories cannot be read; download the files and choose them instead.");
+
+    public static string GitHubRateLimited =>
+        T("GitHub への問い合わせが多すぎて断られました。しばらく（最大 1 時間）待ってからやり直してください。",
+          "GitHub refused because of too many requests. Wait a while (up to an hour) and try again.");
+
+    public static string GitHubFailed(int status) =>
+        T($"GitHub から取得できませんでした（HTTP {status}）。", $"Could not fetch from GitHub (HTTP {status}).");
+
+    public static string GitHubNoKeymap(string repository) =>
+        T($"{repository} に .keymap ファイルが見つかりません。", $"No .keymap file was found in {repository}.");
+
     public static string KeyAttrsTooFew(int count) =>
         T($"key_physical_attrs の値が {count} 個しかありません。",
           $"key_physical_attrs has only {count} values.");

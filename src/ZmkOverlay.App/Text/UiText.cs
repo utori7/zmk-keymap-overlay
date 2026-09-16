@@ -112,7 +112,35 @@ internal static class UiText
         T("いまはサンプルのキーボード（Pyuron）を表示しています。自分のキーマップ（.keymap）を選んでください。",
           "You are looking at a sample keyboard (Pyuron). Choose your own keymap (.keymap).");
 
-    public static string SectionKeymap => T("読み込むファイル", "Files");
+    public static string SectionKeymap => T("PC のファイルから読み込む", "Load from files on this PC");
+
+    public static string SectionGitHub => T("GitHub から読み込む", "Load from GitHub");
+
+    public static string GitHubNote =>
+        T("zmk-config のリポジトリの URL を貼り付けて「取得」を押してください（公開リポジトリのみ）。" +
+          "ファイルはこの PC に保存され、次からは通信せずに使えます。",
+          "Paste the URL of your zmk-config repository and press Fetch (public repositories only). " +
+          "Files are saved on this PC, so no network is needed afterwards.");
+
+    public static string GitHubFetch => T("取得", "Fetch");
+    public static string GitHubFetching => T("GitHub から取得しています…", "Fetching from GitHub…");
+    public static string GitHubKeymapLabel => T("使うキーマップ", "Keymap to use");
+    public static string GitHubUse => T("これを使う", "Use this");
+    public static string GitHubRefresh => T("取り直す", "Fetch again");
+
+    public static string GitHubChooseKeymap(int count) =>
+        T($"キーマップが {count} 個見つかりました。使うものを選んでください。", $"Found {count} keymaps. Choose the one to use.");
+
+    public static string GitHubInUse(string repository, string? branch, string keymapPath) =>
+        T($"GitHub の {repository}（{branch ?? "既定のブランチ"}）にある {keymapPath} を使っています。",
+          $"Using {keymapPath} from {repository} ({branch ?? "default branch"}) on GitHub.");
+
+    public static string GitHubInvalidUrl =>
+        T("GitHub のリポジトリの URL として読めません。例: https://github.com/自分の名前/zmk-config",
+          "This does not look like a GitHub repository URL. Example: https://github.com/your-name/zmk-config");
+
+    public static string GitHubRefreshFailed =>
+        T("GitHub から取り直せませんでした。保存済みのファイルで続けます", "Could not fetch from GitHub. Continuing with the saved files");
     public static string KeymapFileLabel => T("キーマップ", "Keymap");
     public static string LayoutFileLabel => T("物理レイアウト", "Physical layout");
     public static string Browse => T("選ぶ…", "Browse…");

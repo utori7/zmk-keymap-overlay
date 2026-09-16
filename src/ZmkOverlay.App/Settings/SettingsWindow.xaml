@@ -60,7 +60,25 @@
                     <StackPanel x:Name="KeyboardPage">
                         <TextBlock x:Name="SampleNote" Style="{StaticResource Note}" Opacity="1" FontWeight="SemiBold" />
 
-                        <TextBlock x:Name="KeymapSection" Style="{StaticResource Section}" Margin="0,8,0,8" />
+                        <!-- 一般の ZMK 利用者は GitHub 上だけで zmk-config を管理していることが多いので、こちらを先に置く。 -->
+                        <TextBlock x:Name="GitHubSection" Style="{StaticResource Section}" Margin="0,8,0,8" />
+                        <TextBlock x:Name="GitHubNote" Style="{StaticResource Note}" />
+                        <DockPanel Margin="0,4">
+                            <Button x:Name="GitHubFetch" DockPanel.Dock="Right" MinWidth="96" Margin="8,0,0,0" Click="OnGitHubFetch" />
+                            <TextBox x:Name="GitHubUrl" VerticalContentAlignment="Center" />
+                        </DockPanel>
+                        <DockPanel x:Name="GitHubChoice" Margin="0,4" Visibility="Collapsed">
+                            <TextBlock x:Name="GitHubKeymapLabel" Style="{StaticResource FieldLabel}" />
+                            <Button x:Name="GitHubUse" DockPanel.Dock="Right" MinWidth="96" Margin="8,0,0,0" Click="OnGitHubUse" />
+                            <ComboBox x:Name="GitHubKeymapBox" />
+                        </DockPanel>
+                        <DockPanel Margin="0,4">
+                            <Button x:Name="GitHubRefresh" DockPanel.Dock="Right" MinWidth="96" Margin="8,0,0,0"
+                                    Click="OnGitHubRefresh" Visibility="Collapsed" />
+                            <TextBlock x:Name="GitHubStatus" TextWrapping="Wrap" VerticalAlignment="Center" Opacity="0.85" />
+                        </DockPanel>
+
+                        <TextBlock x:Name="KeymapSection" Style="{StaticResource Section}" />
                         <DockPanel Margin="0,4">
                             <TextBlock x:Name="KeymapFileLabel" Style="{StaticResource FieldLabel}" />
                             <Button x:Name="KeymapBrowse" DockPanel.Dock="Right" MinWidth="96" Margin="8,0,0,0" Click="OnBrowseKeymap" />

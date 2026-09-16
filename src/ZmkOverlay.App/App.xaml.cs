@@ -8,6 +8,7 @@ using ZmkOverlay.App.Text;
 using ZmkOverlay.Core.Config;
 using ZmkOverlay.Core.Model;
 using ZmkOverlay.Core.Text;
+using ZmkOverlay.Core.Zmk;
 
 namespace ZmkOverlay.App;
 
@@ -34,6 +35,8 @@ public partial class App : Application, ISettingsHost
 
     private string _configPath = "";
     private string? _configOverride;
+
+    private readonly GitHubSource _gitHub = new();
 
     // 設定画面で値を動かすたびに作り直すので、同じ失敗は繰り返し知らせない。
     private string? _toggleFailureNotified;
@@ -308,15 +311,34 @@ public partial class App : Application, ISettingsHost
         Applied?.Invoke();
     }
 
-    /// <summary>設定ファイルとキーマップを読み直す。読んだものをそのまま使うので保存はしない。</summary>
-    private void Reload()
+    /// <summary>
+    /// 設定ファイルとキーマップを読み直す。GitHub から読んでいるときは、先に取り直す。
+    /// 通信できなくても保存済みのファイルで続ける。起動や表示を通信に依存させないため。
+    /// </summary>
+    private async void Reload()
     {
         try
         {
             var (config, path) = LoadConfig();
             _configPath = path;
 
-            if (!TryApply(config, save: false, out var error))
+            var fetched = false;
+            if (config.Zmk.IsGitHub)
+            {
+                try
+                {
+                    await GitHubSync.RefreshAsync(config, path, _gitHub);
+                    fetched = true;
+                }
+                catch (Exception ex) when (ex is GitHubSourceException or System.IO.IOException or UnauthorizedAccessException)
+                {
+                    _tray?.Notify(UiText.GitHubRefreshFailed, ex.Message, System.Windows.Forms.ToolTipIcon.Warning);
+                }
+            }
+
+            // 取り直すとキーマップの保存先が書き換わることがあるので、そのときは保存する。
+            // 読んだだけのときは保存しない（手で書いた設定ファイルの体裁を崩さないため）。
+            if (!TryApply(config, save: fetched, out var error))
                 ShowError(UiText.ReloadFailed, new InvalidOperationException(error));
         }
         catch (Exception ex)
