@@ -104,14 +104,16 @@
          * 素の &lt の置き換え。呼び出し方も引数の並びも &lt と同じ。
          *
          * flavor と tapping-term-ms は ZMK 組み込みの &lt と同じ値にしてある
-         * （hold-preferred / 200ms）。打鍵感を変えないため、ここは触らないこと。
+         * （tap-preferred / 200ms。ZMK の app/dts/behaviors/layer_tap.dtsi）。
+         * 打鍵感を変えないため、ここは触らないこと。
+         * 最初の版は hold-preferred と書いていたが、組み込みとは違っていた（2026-09-16 に修正）。
          */
         lt_sym: lt_sym {
             compatible = "zmk,behavior-hold-tap";
             label = "LT_SYM";
             #binding-cells = <2>;
             bindings = <&mo_sig_sym>, <&kp>;
-            flavor = "hold-preferred";
+            flavor = "tap-preferred";
             tapping-term-ms = <200>;
         };
 
@@ -120,7 +122,7 @@
             label = "LT_NAV";
             #binding-cells = <2>;
             bindings = <&mo_sig_nav>, <&kp>;
-            flavor = "hold-preferred";
+            flavor = "tap-preferred";
             tapping-term-ms = <200>;
         };
 
@@ -129,7 +131,7 @@
             label = "LT_FUNC";
             #binding-cells = <2>;
             bindings = <&mo_sig_func>, <&kp>;
-            flavor = "hold-preferred";
+            flavor = "tap-preferred";
             tapping-term-ms = <200>;
         };
 
@@ -138,7 +140,7 @@
             label = "LT_SYS";
             #binding-cells = <2>;
             bindings = <&mo_sig_sys>, <&kp>;
-            flavor = "hold-preferred";
+            flavor = "tap-preferred";
             tapping-term-ms = <200>;
         };
     };

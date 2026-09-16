@@ -294,7 +294,10 @@ PC 側は `RegisterHotKey` で合図キーを予約する。予約したキー�
 レイヤー有効化がそのぶん遅れて、レイヤーに入った直後の打鍵が下のレイヤーに落ちる。
 `&mo` を合図キーより先に置いているのも同じ理由。
 
-`flavor` と `tapping-term-ms` は組み込みの `&lt` と同じ値（`hold-preferred` / 200ms）。
+`flavor` と `tapping-term-ms` は組み込みの `&lt` と同じ値（`tap-preferred` / 200ms）。
+最初の版はここを `hold-preferred` にしていたが、ZMK のソース（`app/dts/behaviors/layer_tap.dtsi`）で
+確かめると組み込みは `tap-preferred` だった（2026-09-16 に修正）。`hold-preferred` だと、親指キーを
+押したまま次の文字を素早く打ったときにレイヤーへ入りやすい。
 打鍵感を変えないため。
 
 ## うまくいかなかったときの手

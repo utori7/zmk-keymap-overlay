@@ -233,7 +233,7 @@ public static class ZmkKeymapReader
         return DtsParser.Parse(preprocessed.Text);
     }
 
-    private static DtsNode? Find(DtsNode root, string compatible) =>
+    internal static DtsNode? Find(DtsNode root, string compatible) =>
         root.Descendants().FirstOrDefault(n => n.Compatible == compatible);
 
     // ---- 物理レイアウト ----
@@ -305,7 +305,7 @@ public static class ZmkKeymapReader
 
     // ---- ビヘイビア ----
 
-    private static Dictionary<string, BehaviorInfo> ReadBehaviors(params DtsNode[] roots)
+    internal static Dictionary<string, BehaviorInfo> ReadBehaviors(params DtsNode[] roots)
     {
         var result = new Dictionary<string, BehaviorInfo>(StringComparer.Ordinal);
 
