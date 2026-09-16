@@ -96,8 +96,12 @@ public sealed record GitHubTree(string Branch, IReadOnlyList<GitHubFile> Files)
 /// </summary>
 public static class GitHubSync
 {
-    /// <summary>リポジトリのキーマップを取ってきて、設定をそれを読む形にする。</summary>
-    public static async Task UseAsync(
+    /// <summary>
+    /// リポジトリのキーマップを取ってきて、設定をそれを読む形にする。
+    /// キーマップの近くにキーの並びが無ければ、ZMK 本体からも取ってくる。
+    /// 戻り値は、取得は済んだが利用者に伝えたいこと（ZMK 本体から取れなかった、など）。無ければ null。
+    /// </summary>
+    public static async Task<string?> UseAsync(
         AppConfig config, string configPath, GitHubSource source,
         GitHubLocation location, GitHubTree tree, string keymapPath,
         CancellationToken cancellation = default)
@@ -121,6 +125,8 @@ public static class GitHubSync
         // 設定ファイルからの相対で持つ。フォルダごと別の PC に持っていっても読める。
         config.Zmk.KeymapFile = System.IO.Path.GetRelativePath(folder, local).Replace('\\', '/');
         config.Zmk.PhysicalLayoutFile = null;
+
+        return await ZmkShieldSync.AutoAsync(config, configPath, source, cancellation);
     }
 
     /// <summary>
@@ -137,8 +143,9 @@ public static class GitHubSync
     /// <summary>
     /// 設定に書かれたリポジトリから取り直す。利用者が物理レイアウトを選んでいたら、それは残す。
     /// 前回のキーマップがリポジトリから無くなっていたら、見つかった最初のものを使う。
+    /// 戻り値は <see cref="UseAsync"/> と同じ。
     /// </summary>
-    public static async Task RefreshAsync(
+    public static async Task<string?> RefreshAsync(
         AppConfig config, string configPath, GitHubSource source, CancellationToken cancellation = default)
     {
         var github = config.Zmk.GitHub;
@@ -156,17 +163,25 @@ public static class GitHubSync
 
         var chosenLayout = config.Zmk.PhysicalLayoutFile;
 
-        await UseAsync(config, configPath, source, location, tree, keymap, cancellation);
+        var notice = await UseAsync(config, configPath, source, location, tree, keymap, cancellation);
 
         config.Zmk.PhysicalLayoutFile = chosenLayout;
+        return notice;
     }
 }
 
 public sealed class GitHubSourceException : Exception
 {
-    public GitHubSourceException(string message, Exception? inner = null) : base(message, inner)
+    public GitHubSourceException(string message, Exception? inner = null, HttpStatusCode? status = null)
+        : base(message, inner)
     {
+        Status = status;
     }
+
+    /// <summary>GitHub が返した状態コード。通信できなかったときは null。</summary>
+    public HttpStatusCode? Status { get; }
+
+    public bool IsNotFound => Status == HttpStatusCode.NotFound;
 }
 
 /// <summary>
@@ -192,6 +207,12 @@ public sealed class GitHubSource
     private const int MaxFiles = 300;
     private const long MaxFileBytes = 1024 * 1024;
 
+    /// <summary>
+    /// 保存先の入れ替えは、アプリ全体で 1 つずつ行う。初期設定・設定画面・トレイの再読み込みが
+    /// 同時に取りに行くと、同じ一時フォルダを取り合って壊れる。
+    /// </summary>
+    private static readonly SemaphoreSlim Gate = new(1, 1);
+
     private readonly HttpClient _http;
 
     /// <param name="http">テストで偽の応答を返すときだけ渡す。省略時はシステムのプロキシ設定に従う。</param>
@@ -209,13 +230,17 @@ public sealed class GitHubSource
     /// <summary>ブランチ（指定が無ければ既定のブランチ）と、そこにあるファイルの一覧を得る。</summary>
     public async Task<GitHubTree> ListAsync(GitHubLocation location, CancellationToken cancellation = default)
     {
-        var repository = $"{ApiBase}/repos/{Uri.EscapeDataString(location.Owner)}/{Uri.EscapeDataString(location.Repository)}";
+        var repository = RepositoryApi(location);
 
         var branch = location.Branch;
         if (string.IsNullOrWhiteSpace(branch))
         {
             using var info = await GetJsonAsync(repository, location, cancellation);
-            branch = info.RootElement.TryGetProperty("default_branch", out var value) ? value.GetString() : null;
+            branch = info.RootElement.ValueKind == JsonValueKind.Object
+                     && info.RootElement.TryGetProperty("default_branch", out var value)
+                     && value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : null;
             branch ??= "main";
         }
 
@@ -224,12 +249,14 @@ public sealed class GitHubSource
 
         var files = new List<GitHubFile>();
 
-        if (tree.RootElement.TryGetProperty("tree", out var entries))
+        if (tree.RootElement.ValueKind == JsonValueKind.Object
+            && tree.RootElement.TryGetProperty("tree", out var entries)
+            && entries.ValueKind == JsonValueKind.Array)
         {
             foreach (var entry in entries.EnumerateArray())
             {
-                if (entry.GetProperty("type").GetString() != "blob") continue;
-                if (entry.GetProperty("path").GetString() is not { } path) continue;
+                if (StringProperty(entry, "type") != "blob") continue;
+                if (StringProperty(entry, "path") is not { } path) continue;
 
                 var size = entry.TryGetProperty("size", out var s) && s.TryGetInt64(out var n) ? n : 0;
                 files.Add(new GitHubFile(path, size));
@@ -243,17 +270,26 @@ public sealed class GitHubSource
     /// 取ってくるファイル。キーマップのあるフォルダ以下の、devicetree 関連のファイルだけ。
     /// zmk-config ではシールドの定義（物理レイアウト）も config/ 以下にまとまっているので、
     /// リポジトリ全体を取る必要はない。
+    ///
+    /// ほかに、どのキーボードか（build.yaml）と ZMK の版（west.yml）も取る。
+    /// キーの並びが ZMK 本体にあるキーボードで、取りに行く先を決めるのに使う。
     /// </summary>
     public static IReadOnlyList<GitHubFile> FilesToDownload(GitHubTree tree, string keymapPath)
     {
         var slash = keymapPath.LastIndexOf('/');
         var folder = slash < 0 ? "" : keymapPath[..(slash + 1)];
 
+        // リポジトリ直下の build.yaml と、直下かキーマップと同じフォルダ（ふつうは config/）の west.yml。
+        bool IsBuildDescription(string path) =>
+            path is ZmkShieldSource.BuildFileName or ZmkShieldSource.WestFileName
+            || path == folder + ZmkShieldSource.WestFileName;
+
         return tree.Files
-            .Where(f => f.Path.StartsWith(folder, StringComparison.Ordinal))
-            .Where(f => SourceExtensions.Any(ext => f.Path.EndsWith(ext, StringComparison.OrdinalIgnoreCase)))
             .Where(f => f.Size <= MaxFileBytes)
-            .OrderBy(f => f.Path == keymapPath ? 0 : 1)   // 上限で切るときもキーマップだけは必ず残す
+            .Where(f => IsBuildDescription(f.Path)
+                        || (f.Path.StartsWith(folder, StringComparison.Ordinal)
+                            && SourceExtensions.Any(ext => f.Path.EndsWith(ext, StringComparison.OrdinalIgnoreCase))))
+            .OrderBy(f => f.Path == keymapPath ? 0 : IsBuildDescription(f.Path) ? 1 : 2)   // 上限で切るときもキーマップは必ず残す
             .Take(MaxFiles)
             .ToList();
     }
@@ -268,6 +304,23 @@ public sealed class GitHubSource
         CancellationToken cancellation = default)
     {
         var target = System.IO.Path.GetFullPath(cacheFolder).TrimEnd('\\', '/');
+
+        await WithGateAsync(
+            () => DownloadIntoAsync(
+                target,
+                FilesToDownload(tree, keymapPath).Select(f => f.Path),
+                path => GetRawAsync(location, tree.Branch, path, cancellation)),
+            cancellation);
+
+        return System.IO.Path.Combine(target, keymapPath.Replace('/', System.IO.Path.DirectorySeparatorChar));
+    }
+
+    /// <summary>
+    /// <paramref name="paths"/> を一時フォルダに取ってから、<paramref name="target"/> と入れ替える。
+    /// 途中で失敗しても前回の保存分は残る。<see cref="WithGateAsync"/> の中で呼ぶこと。
+    /// </summary>
+    internal static async Task DownloadIntoAsync(string target, IEnumerable<string> paths, Func<string, Task<byte[]>> fetch)
+    {
         var staging = target + ".downloading";
 
         if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
@@ -275,53 +328,141 @@ public sealed class GitHubSource
 
         try
         {
-            foreach (var file in FilesToDownload(tree, keymapPath))
+            foreach (var path in paths)
             {
-                var local = System.IO.Path.GetFullPath(
-                    System.IO.Path.Combine(staging, file.Path.Replace('/', System.IO.Path.DirectorySeparatorChar)));
+                if (LocalPath(staging, path) is not { } local) continue;
 
-                // リポジトリ内のパスが保存先の外を指していたら書かない。
-                if (!local.StartsWith(staging + System.IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                var url = $"{RawBase}/{Uri.EscapeDataString(location.Owner)}/{Uri.EscapeDataString(location.Repository)}/" +
-                          $"{EscapePath(tree.Branch)}/{EscapePath(file.Path)}";
-
-                var bytes = await GetBytesAsync(url, location, cancellation);
+                var bytes = await fetch(path);
 
                 Directory.CreateDirectory(System.IO.Path.GetDirectoryName(local)!);
-                await File.WriteAllBytesAsync(local, bytes, cancellation);
+                await File.WriteAllBytesAsync(local, bytes);
             }
 
-            if (Directory.Exists(target)) Directory.Delete(target, recursive: true);
+            ReplaceFolder(staging, target);
+        }
+        catch
+        {
+            TryDelete(staging);
+            throw;
+        }
+    }
+
+    /// <summary>リポジトリ内のパスを保存先のパスにする。保存先の外を指していたら null（書かない）。</summary>
+    internal static string? LocalPath(string root, string repositoryPath)
+    {
+        var local = System.IO.Path.GetFullPath(
+            System.IO.Path.Combine(root, repositoryPath.Replace('/', System.IO.Path.DirectorySeparatorChar)));
+
+        return local.StartsWith(root + System.IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+            ? local
+            : null;
+    }
+
+    /// <summary>
+    /// 取り終えたフォルダを本来の場所に置く。前回の分はいったん脇へ退避し、
+    /// 置き終えてから消す。置けなかったら退避した分を戻す。
+    /// </summary>
+    internal static void ReplaceFolder(string staging, string target)
+    {
+        var old = target + ".old";
+        if (Directory.Exists(old)) Directory.Delete(old, recursive: true);
+
+        var hadPrevious = Directory.Exists(target);
+        if (hadPrevious) Directory.Move(target, old);
+
+        try
+        {
+            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(target)!);
             Directory.Move(staging, target);
         }
         catch
         {
-            try
-            {
-                if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
-            }
-            catch (IOException)
-            {
-                // 後始末に失敗しても、元の失敗のほうを伝える。
-            }
-
+            if (hadPrevious && !Directory.Exists(target)) Directory.Move(old, target);
             throw;
         }
 
-        return System.IO.Path.Combine(target, keymapPath.Replace('/', System.IO.Path.DirectorySeparatorChar));
+        if (hadPrevious) TryDelete(old);
+    }
+
+    private static void TryDelete(string folder)
+    {
+        try
+        {
+            if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // 後始末に失敗しても、元の失敗のほうを伝える。残ったものは次回の取得で消える。
+        }
+    }
+
+    /// <summary>保存先を書き換える処理を、アプリ全体で 1 つずつ流す。</summary>
+    internal static async Task WithGateAsync(Func<Task> work, CancellationToken cancellation)
+    {
+        await Gate.WaitAsync(cancellation);
+        try
+        {
+            await work();
+        }
+        finally
+        {
+            Gate.Release();
+        }
     }
 
     internal static string EscapePath(string path) =>
         string.Join('/', path.Split('/').Select(Uri.EscapeDataString));
+
+    /// <summary>フォルダの中身（ファイル名だけ）。GitHub API を 1 回使う。</summary>
+    internal async Task<IReadOnlyList<string>> ListDirectoryAsync(
+        GitHubLocation repository, string path, string reference, CancellationToken cancellation)
+    {
+        using var listing = await GetJsonAsync(
+            $"{RepositoryApi(repository)}/contents/{EscapePath(path)}?ref={Uri.EscapeDataString(reference)}",
+            repository, cancellation);
+
+        if (listing.RootElement.ValueKind != JsonValueKind.Array) return Array.Empty<string>();
+
+        return listing.RootElement.EnumerateArray()
+            .Where(e => StringProperty(e, "type") == "file")
+            .Select(e => StringProperty(e, "name"))
+            .OfType<string>()
+            .ToList();
+    }
+
+    /// <summary>ファイルの本文。raw.githubusercontent.com から取るので API の回数を使わない。</summary>
+    internal Task<byte[]> GetRawAsync(GitHubLocation repository, string reference, string path, CancellationToken cancellation) =>
+        GetBytesAsync(
+            $"{RawBase}/{Uri.EscapeDataString(repository.Owner)}/{Uri.EscapeDataString(repository.Repository)}/" +
+            $"{EscapePath(reference)}/{EscapePath(path)}",
+            repository, cancellation);
+
+    private static string RepositoryApi(GitHubLocation location) =>
+        $"{ApiBase}/repos/{Uri.EscapeDataString(location.Owner)}/{Uri.EscapeDataString(location.Repository)}";
+
+    private static string? StringProperty(JsonElement element, string name) =>
+        element.ValueKind == JsonValueKind.Object
+        && element.TryGetProperty(name, out var value)
+        && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 
     private async Task<JsonDocument> GetJsonAsync(string url, GitHubLocation location, CancellationToken cancellation)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
 
-        return JsonDocument.Parse(await SendAsync(request, location, cancellation));
+        var body = await SendAsync(request, location, cancellation);
+
+        try
+        {
+            return JsonDocument.Parse(body);
+        }
+        catch (JsonException ex)
+        {
+            // プロキシやフィルタが HTML のページを返してくることがある。
+            throw new GitHubSourceException(Strings.GitHubUnexpectedResponse, ex);
+        }
     }
 
     private async Task<byte[]> GetBytesAsync(string url, GitHubLocation location, CancellationToken cancellation)
@@ -352,17 +493,23 @@ public sealed class GitHubSource
 
         using (response)
         {
-            // 非公開のリポジトリも、認証なしでは 404 に見える。
-            if (response.StatusCode == HttpStatusCode.NotFound)
-                throw new GitHubSourceException(Strings.GitHubNotFound(location.FullName));
+            var status = response.StatusCode;
 
-            if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests)
-                throw new GitHubSourceException(Strings.GitHubRateLimited);
+            // 非公開のリポジトリも、認証なしでは 404 に見える。
+            if (status == HttpStatusCode.NotFound)
+                throw new GitHubSourceException(Strings.GitHubNotFound(location.FullName), status: status);
+
+            if (status == HttpStatusCode.TooManyRequests || (status == HttpStatusCode.Forbidden && IsRateLimited(response)))
+                throw new GitHubSourceException(Strings.GitHubRateLimited, status: status);
 
             if (!response.IsSuccessStatusCode)
-                throw new GitHubSourceException(Strings.GitHubFailed((int)response.StatusCode));
+                throw new GitHubSourceException(Strings.GitHubFailed((int)status), status: status);
 
             return await response.Content.ReadAsByteArrayAsync(cancellation);
         }
     }
+
+    /// <summary>403 のうち、回数制限によるもの。GitHub は残り回数を X-RateLimit-Remaining で返す。</summary>
+    private static bool IsRateLimited(HttpResponseMessage response) =>
+        response.Headers.TryGetValues("X-RateLimit-Remaining", out var values) && values.Contains("0");
 }

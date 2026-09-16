@@ -73,6 +73,9 @@ public static class KeymapLoader
             LabelOverrides = zmk.LabelOverrides,
             LayerNames = zmk.ParseIndexed(zmk.LayerNames),
             SignalKeys = zmk.ParseIndexed(zmk.SignalKeys),
+            ExtraLayoutFolders = string.IsNullOrWhiteSpace(zmk.ShieldLayoutFolder)
+                ? null
+                : new[] { ConfigPaths.Resolve(configPath, zmk.ShieldLayoutFolder) },
         });
 
         JsonStore.Validate(result.Layout, result.Keymap);

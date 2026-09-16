@@ -67,9 +67,49 @@ public sealed class Combo
     public List<int> Layers { get; set; } = new();
 }
 
+/// <summary>
+/// 条件付きレイヤー（<c>zmk,conditional-layers</c>）。<see cref="IfLayers"/> がすべて有効なあいだ、
+/// キーボードは <see cref="ThenLayer"/> にも入る。Corne の「Lower + Raise で Adjust」がこの形。
+/// </summary>
+public sealed class ConditionalLayer
+{
+    public List<int> IfLayers { get; set; } = new();
+    public int ThenLayer { get; set; }
+}
+
 public sealed class Keymap
 {
     public string Layout { get; set; } = "";
     public List<Layer> Layers { get; set; } = new();
     public List<Combo> Combos { get; set; } = new();
+    public List<ConditionalLayer> ConditionalLayers { get; set; } = new();
+
+    /// <summary>
+    /// 有効なレイヤーの集合に、条件付きレイヤーで入るものを足す。条件付きレイヤーが別の条件を満たすこともあるので、
+    /// 増えなくなるまで繰り返す。
+    /// </summary>
+    public HashSet<int> WithConditionalLayers(IEnumerable<int> active)
+    {
+        var result = new HashSet<int>(active);
+
+        for (var changed = true; changed;)
+        {
+            changed = false;
+
+            foreach (var rule in ConditionalLayers)
+            {
+                if (rule.IfLayers.Count > 0 && rule.IfLayers.All(result.Contains) && result.Add(rule.ThenLayer))
+                    changed = true;
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// キーボードを操作すると自動で表示されるレイヤー。合図キーを持つものと、
+    /// 合図キーを持つレイヤーの組み合わせで入る条件付きレイヤー。
+    /// </summary>
+    public HashSet<int> AutoShownLayerIds() =>
+        WithConditionalLayers(Layers.Where(l => !string.IsNullOrWhiteSpace(l.SignalKey)).Select(l => l.Index));
 }

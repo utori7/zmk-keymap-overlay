@@ -6,4 +6,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- 部品単位のテスト（フォルダの入れ替え、候補の並びなど）のため。 -->
+    <InternalsVisibleTo Include="ZmkOverlay.Core.Tests" />
+  </ItemGroup>
+
 </Project>

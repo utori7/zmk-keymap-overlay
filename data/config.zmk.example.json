@@ -1,7 +1,7 @@
 {
-  "_comment": "zmk-config を直接読む場合の設定例。exe の隣に config.json という名前で置く。パスは config.json からの相対でも絶対でもよい。",
+  "_comment": "zmk-config を直接読む場合の設定例。exe の隣に config.json という名前で置く。パスは config.json からの相対でも絶対でもよい。ふつうは設定画面から選べば、この形で書き込まれる。",
 
-  "keyUnitPx": 56,
+  "keyUnitPx": 44,
   "opacity": 0.88,
   "position": "BottomCenter",
   "keyboardLayout": "jis",
@@ -10,8 +10,10 @@
   "displayMode": "layersOnly",
 
   "zmk": {
-    "keymapFile": "C:/Users/you/zmk-config-Pyuron/config/Pyuron.keymap",
-    "physicalLayoutFile": "C:/Users/you/zmk-config-Pyuron/config/boards/shields/Pyuron/Pyuron.dtsi",
+    "keymapFile": "C:/Users/you/zmk-config/config/corne.keymap",
+
+    "_physicalLayoutFile": "省略すると、キーマップのフォルダ以下 → ZMK 本体から取得したもの（shieldLayoutFolder）→ キーマップの書き方からの推定、の順で探す。自作キーボードで見つからないときだけ書く。",
+    "physicalLayoutFile": null,
 
     "_labelOverrides": "キーコードの表示を差し替える。既定では INT4/INT5 は JIS のキー名（変換 / 無変換）で出る。",
     "labelOverrides": {
@@ -27,9 +29,7 @@
     "_signalKeys": "レイヤー連動の合図キー。キーマップに仕込んであれば自動で読み取るので、普通は書かなくてよい。書くとそのレイヤーはこちらが優先され、空文字 \"\" にすると追従しない。",
     "signalKeys": {
       "1": "F13",
-      "2": "F14",
-      "3": "F15",
-      "5": "F16"
+      "2": "F14"
     }
   },
 

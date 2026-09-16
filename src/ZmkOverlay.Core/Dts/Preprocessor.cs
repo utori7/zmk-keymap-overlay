@@ -147,6 +147,12 @@ public sealed class Preprocessor
         if (argument.StartsWith('<'))
         {
             // システムヘッダ。キーコード名は内蔵表で解決するので読み込まない。
+            // ただし ZMK 本体の共有レイアウト（<layouts/...>）は物理レイアウトそのものなので、
+            // 手元にあれば読む。それ以外まで読むと、組み込みのビヘイビア定義などが混ざって解釈が変わる。
+            var system = argument.Trim().TrimStart('<').TrimEnd('>').Trim();
+            if (system.StartsWith("layouts/", StringComparison.Ordinal) && FindZmkDtsFile(directory, system) is { } found)
+                return Collect(File.ReadAllText(found), found);
+
             return "";
         }
 
@@ -160,6 +166,29 @@ public sealed class Preprocessor
         }
 
         return Collect(File.ReadAllText(full), full);
+    }
+
+    /// <summary>
+    /// ZMK のソースの並び（app/boards/shields/... と app/dts/layouts/...）で、読み込み元から上へたどって
+    /// <c>dts/&lt;path&gt;</c> を探す。ZMK 本体から取ってきた保存分も、PC にある zmk のソースも同じ並び。
+    /// </summary>
+    private static string? FindZmkDtsFile(string directory, string relative)
+    {
+        // ファイルを持たない文字列（ProcessText）には、たどる場所が無い。
+        if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory)) return null;
+
+        var parts = relative.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Any(p => p is "." or "..")) return null;
+
+        var current = new DirectoryInfo(directory);
+
+        for (var depth = 0; current is not null && depth < 10; depth++, current = current.Parent)
+        {
+            var candidate = Path.Combine(new[] { current.FullName, "dts" }.Concat(parts).ToArray());
+            if (File.Exists(candidate)) return candidate;
+        }
+
+        return null;
     }
 
     private void Define(string argument)

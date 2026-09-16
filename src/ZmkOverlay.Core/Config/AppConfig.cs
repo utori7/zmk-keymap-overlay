@@ -23,6 +23,9 @@ public sealed class HotkeySpec
         string.Equals(Key.Trim(), other.Key.Trim(), StringComparison.OrdinalIgnoreCase)
         && NormalizedModifiers().SetEquals(other.NormalizedModifiers());
 
+    /// <summary>修飾キーを含むか（"ctrl" / "alt" / "shift" / "win"。表記の揺れは吸収する）。</summary>
+    public bool Has(string modifier) => NormalizedModifiers().Contains(modifier);
+
     private HashSet<string> NormalizedModifiers() =>
         Modifiers
             .Select(m => m.Trim().ToLowerInvariant() switch
@@ -32,6 +35,38 @@ public sealed class HotkeySpec
                 var name => name,
             })
             .ToHashSet();
+}
+
+/// <summary>
+/// ショートカットとして使ってよい組み合わせの決まり。
+///
+/// Ctrl+Alt は多くの欧州配列で AltGr と同じ扱いになり、ドイツ語配列の Ctrl+Alt+7 は「{」を打つ。
+/// そういう組み合わせをホットキーとして押さえると、その文字が打てなくなる。
+/// 文字が出るかどうかは Windows の配列情報でしか分からないので、判定はアプリが起動時に差し込む。
+/// </summary>
+public static class HotkeyRules
+{
+    /// <summary>その組み合わせを押すと、入っているいずれかの配列で文字が入力されるか。既定は「入力されない」。</summary>
+    public static Func<HotkeySpec, bool> TypesCharacter { get; set; } = _ => false;
+
+    /// <summary>レイヤーを手で表示する既定のショートカット（Ctrl+Alt+番号、0〜9 のみ）。</summary>
+    public static HotkeySpec? DefaultLayerHotkey(int layerId) =>
+        layerId is >= 0 and <= 9
+            ? new HotkeySpec { Modifiers = { "Ctrl", "Alt" }, Key = layerId.ToString(CultureInfo.InvariantCulture) }
+            : null;
+
+    /// <summary>有効 / 無効の切り替えの既定の候補。先頭から、文字入力に使われていないものを選ぶ。</summary>
+    public static IReadOnlyList<HotkeySpec> ToggleCandidates { get; } = new[]
+    {
+        new HotkeySpec { Modifiers = { "Ctrl", "Alt" }, Key = "K" },
+        new HotkeySpec { Modifiers = { "Ctrl", "Alt", "Shift" }, Key = "K" },
+        new HotkeySpec { Modifiers = { "Ctrl", "Alt" }, Key = "F12" },
+    };
+
+    public static HotkeySpec ChooseDefaultToggle() =>
+        Copy(ToggleCandidates.FirstOrDefault(s => !TypesCharacter(s)) ?? ToggleCandidates[0]);
+
+    private static HotkeySpec Copy(HotkeySpec spec) => new() { Modifiers = spec.Modifiers.ToList(), Key = spec.Key };
 }
 
 /// <summary>
@@ -112,6 +147,15 @@ public sealed class ZmkSourceConfig
     [JsonPropertyName("github")]
     public GitHubSourceConfig GitHub { get; set; } = new();
 
+    /// <summary>
+    /// ZMK 本体から取ってきたシールド定義の保存先（設定ファイルからの相対でよい）。
+    /// Corne のように定義が ZMK 本体にあるキーボードで、キーマップの近くに物理レイアウトが無いときに使う。
+    /// </summary>
+    public string? ShieldLayoutFolder { get; set; }
+
+    /// <summary><see cref="ShieldLayoutFolder"/> のシールド名（例 "corne"）。画面に出すのと、取り直すときに使う。</summary>
+    public string? Shield { get; set; }
+
     [JsonIgnore]
     public bool IsGitHub =>
         string.Equals(Source, "github", StringComparison.OrdinalIgnoreCase)
@@ -141,9 +185,9 @@ public sealed class ZmkSourceConfig
 
 public sealed class AppConfig
 {
-    /// <summary>設定ファイルからの相対パス。</summary>
-    public string LayoutFile { get; set; } = "data/layouts/pyuron.json";
-    public string KeymapFile { get; set; } = "data/keymaps/pyuron.json";
+    /// <summary>設定ファイルからの相対パス。既定は同梱のサンプル。</summary>
+    public string LayoutFile { get; set; } = ConfigPaths.SampleLayoutFile;
+    public string KeymapFile { get; set; } = ConfigPaths.SampleKeymapFile;
 
     /// <summary>ZMK のソースから直接読む場合の設定。</summary>
     public ZmkSourceConfig Zmk { get; set; } = new();
@@ -203,7 +247,10 @@ public sealed class AppConfig
     /// </summary>
     public Dictionary<string, HotkeySpec> LayerHotkeys { get; set; } = new();
 
-    /// <summary>そのレイヤーを手で表示するショートカット。使わない・割り当てが無いなら null。</summary>
+    /// <summary>
+    /// そのレイヤーを手で表示するショートカット。使わない・割り当てが無いなら null。
+    /// 既定の Ctrl+Alt+番号 が、この PC の配列で文字の入力に使われるなら割り当てない（<see cref="HotkeyRules"/>）。
+    /// </summary>
     public HotkeySpec? ManualLayerHotkey(int layerId)
     {
         if (!EnableManualLayerKeys) return null;
@@ -211,10 +258,14 @@ public sealed class AppConfig
         if (LayerHotkeys.TryGetValue(layerId.ToString(CultureInfo.InvariantCulture), out var custom))
             return string.IsNullOrWhiteSpace(custom.Key) ? null : custom;
 
-        return layerId is >= 0 and <= 9
-            ? new HotkeySpec { Modifiers = { "Ctrl", "Alt" }, Key = layerId.ToString(CultureInfo.InvariantCulture) }
+        return HotkeyRules.DefaultLayerHotkey(layerId) is { } fallback && !HotkeyRules.TypesCharacter(fallback)
+            ? fallback
             : null;
     }
+
+    /// <summary>レイヤーのショートカットが、利用者が選んだものではなく既定の Ctrl+Alt+番号 か。</summary>
+    public bool UsesDefaultLayerHotkey(int layerId) =>
+        EnableManualLayerKeys && !LayerHotkeys.ContainsKey(layerId.ToString(CultureInfo.InvariantCulture));
 
     /// <summary>モデルに無いキーの保持。<see cref="ZmkSourceConfig.Extra"/> と同じ目的。</summary>
     [JsonExtensionData]

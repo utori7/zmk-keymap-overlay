@@ -53,6 +53,9 @@ public enum LayoutSource
     /// <summary>キーマップのフォルダ以下で見つけた（シールドの .dtsi など）。</summary>
     FoundNearby,
 
+    /// <summary>ZMK 本体から取ってきたシールドの定義で見つけた（Corne など、定義が ZMK 本体にあるキーボード）。</summary>
+    ZmkRepository,
+
     /// <summary>キーマップの書き方から推定した。正確とは限らない。</summary>
     Guessed,
 

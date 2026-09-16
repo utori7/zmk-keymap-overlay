@@ -28,6 +28,12 @@ public sealed class ZmkReadOptions
     /// 空文字は「このレイヤーは追従しない」。
     /// </summary>
     public IReadOnlyDictionary<int, string>? SignalKeys { get; init; }
+
+    /// <summary>
+    /// キーマップの近くで見つからなかったときに物理レイアウトを探すフォルダ。
+    /// ZMK 本体から取ってきたシールドの定義（<see cref="ZmkShieldSource"/>）がここに入る。
+    /// </summary>
+    public IReadOnlyList<string>? ExtraLayoutFolders { get; init; }
 }
 
 public sealed class ZmkReadResult
@@ -51,6 +57,7 @@ public static class ZmkKeymapReader
     private const string PhysicalLayoutCompatible = "zmk,physical-layout";
     private const string KeymapCompatible = "zmk,keymap";
     private const string CombosCompatible = "zmk,combos";
+    private const string ConditionalLayersCompatible = "zmk,conditional-layers";
     private const string KeyAttrsBehavior = "key_physical_attrs";
 
     /// <summary>キーマップのフォルダ以下で物理レイアウトを探すとき、中身を見るファイルの上限。</summary>
@@ -59,11 +66,10 @@ public static class ZmkKeymapReader
     public static ZmkReadResult Read(ZmkReadOptions options)
     {
         var warnings = new List<string>();
+        var skipped = new List<string>();
 
-        var keymapTree = ParseFile(options.KeymapPath, warnings);
-
-        var keymapNode = Find(keymapTree, KeymapCompatible)
-                         ?? throw new InvalidDataException(Strings.KeymapNodeMissing);
+        var keymapTree = ParseFile(options.KeymapPath, warnings, skipped);
+        var keymapNode = RequireKeymap(keymapTree, skipped);
 
         var layerNodes = keymapNode.Children;
 
@@ -118,6 +124,7 @@ public static class ZmkKeymapReader
         }
 
         keymap.Combos.AddRange(ReadCombos(keymapTree, formatter));
+        keymap.ConditionalLayers.AddRange(ReadConditionalLayers(keymapTree));
 
         return new ZmkReadResult
         {
@@ -135,10 +142,11 @@ public static class ZmkKeymapReader
     ///   1. 指定されたファイル
     ///   2. キーマップ自身
     ///   3. キーマップのフォルダ以下の .dtsi / .overlay（zmk-config のシールド定義など）
-    ///   4. キーマップの書き方からの推定
+    ///   4. ZMK 本体から取ってきたシールドの定義（Corne のように、定義が ZMK 本体にあるキーボード）
+    ///   5. キーマップの書き方からの推定
     ///
     /// 一般の利用者に「シールドの .dtsi を指定してください」と求めるのは難しい。
-    /// ほとんどの zmk-config は 3 で見つかり、見つからなくても 4 でおおよその絵は出せる。
+    /// 自作系の zmk-config は 3 で、定番のキーボードは 4 で見つかり、どちらも無くても 5 でおおよその絵は出せる。
     /// </summary>
     private static (PhysicalLayout Layout, DtsNode Tree, LayoutSource Source, string? Path) ResolveLayout(
         ZmkReadOptions options, DtsNode keymapTree, int keyCount, List<string> warnings)
@@ -148,15 +156,22 @@ public static class ZmkKeymapReader
             var full = Path.GetFullPath(options.PhysicalLayoutPath);
             var tree = full == Path.GetFullPath(options.KeymapPath) ? keymapTree : ParseFile(full, warnings);
 
-            if (ReadPhysicalLayout(tree, warnings) is { } specified)
+            if (ReadPhysicalLayout(tree, warnings, keyCount) is { } specified)
                 return (specified, tree, LayoutSource.SpecifiedFile, full);
         }
 
-        if (ReadPhysicalLayout(keymapTree, warnings) is { } inKeymap)
+        if (ReadPhysicalLayout(keymapTree, warnings, keyCount) is { } inKeymap)
             return (inKeymap, keymapTree, LayoutSource.Keymap, Path.GetFullPath(options.KeymapPath));
 
-        if (FindNearKeymap(options.KeymapPath, keyCount) is { } nearby)
+        if (Path.GetDirectoryName(Path.GetFullPath(options.KeymapPath)) is { } keymapFolder
+            && FindLayoutIn(keymapFolder, keyCount) is { } nearby)
             return (nearby.Layout, nearby.Tree, LayoutSource.FoundNearby, nearby.Path);
+
+        foreach (var folder in options.ExtraLayoutFolders ?? Array.Empty<string>())
+        {
+            if (Directory.Exists(folder) && FindLayoutIn(folder, keyCount) is { } fromZmk)
+                return (fromZmk.Layout, fromZmk.Tree, LayoutSource.ZmkRepository, fromZmk.Path);
+        }
 
         if (keyCount > 0 && LayoutGuesser.Guess(File.ReadAllText(options.KeymapPath), keyCount) is { } guessed)
         {
@@ -168,16 +183,15 @@ public static class ZmkKeymapReader
     }
 
     /// <summary>
+    /// フォルダ以下から、キー数の合う物理レイアウトを探す。
     /// zmk-config では、物理レイアウトはシールドの .dtsi（config/boards/shields/...）にあることが多い。
-    /// キーマップのフォルダ以下から、キー数の合うものを探す。
     ///
     /// キーマップをダウンロードフォルダのような大きな場所に置かれることもあるので、
     /// 見に行く深さとファイル数に上限を設けている。
     /// </summary>
-    private static (PhysicalLayout Layout, DtsNode Tree, string Path)? FindNearKeymap(string keymapPath, int keyCount)
+    private static (PhysicalLayout Layout, DtsNode Tree, string Path)? FindLayoutIn(string folder, int keyCount)
     {
-        var folder = Path.GetDirectoryName(Path.GetFullPath(keymapPath));
-        if (folder is null || keyCount == 0) return null;
+        if (keyCount == 0) return null;
 
         var enumeration = new EnumerationOptions
         {
@@ -204,13 +218,17 @@ public static class ZmkKeymapReader
             try
             {
                 // 解析は重いので、物理レイアウトを持っていそうなファイルだけにする。
-                if (!File.ReadAllText(path).Contains(PhysicalLayoutCompatible, StringComparison.Ordinal)) continue;
+                // ZMK 本体のシールドは、定義を <layouts/...> から読み込んでいることが多い。
+                var text = File.ReadAllText(path);
+                if (!text.Contains(PhysicalLayoutCompatible, StringComparison.Ordinal)
+                    && !text.Contains("<layouts/", StringComparison.Ordinal))
+                    continue;
 
                 // 候補を調べる途中の警告は、採用しなかったファイルのものが混ざるので捨てる。
                 var ignored = new List<string>();
                 var tree = ParseFile(path, ignored);
 
-                if (ReadPhysicalLayout(tree, ignored) is { } layout && layout.Keys.Count == keyCount)
+                if (ReadPhysicalLayout(tree, ignored, keyCount) is { } layout && layout.Keys.Count == keyCount)
                     return (layout, tree, path);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
@@ -223,26 +241,87 @@ public static class ZmkKeymapReader
         return null;
     }
 
-    private static DtsNode ParseFile(string path, List<string> warnings)
+    /// <param name="skipped">トップレベルで読み飛ばした名前（展開できなかったマクロなど）を受け取る。</param>
+    private static DtsNode ParseFile(string path, List<string> warnings, List<string>? skipped = null)
     {
         var preprocessed = new Preprocessor().ProcessFile(path);
 
         foreach (var warning in preprocessed.Warnings)
             warnings.Add($"{Path.GetFileName(path)}: {warning}");
 
-        return DtsParser.Parse(preprocessed.Text);
+        var names = new List<string>();
+        var tree = DtsParser.Parse(preprocessed.Text, names);
+
+        foreach (var name in names.Distinct(StringComparer.Ordinal))
+            warnings.Add($"{Path.GetFileName(path)}: {Strings.TopLevelSkipped(name)}");
+
+        skipped?.AddRange(names);
+        return tree;
     }
 
     internal static DtsNode? Find(DtsNode root, string compatible) =>
         root.Descendants().FirstOrDefault(n => n.Compatible == compatible);
 
+    /// <summary>
+    /// キーマップのノード。無ければ理由を付けて断る。
+    /// zmk-helpers の ZMK_LAYER(...) のような書き方は展開できないので、それと分かるように伝える。
+    /// </summary>
+    internal static DtsNode RequireKeymap(DtsNode tree, IEnumerable<string> skipped) =>
+        Find(tree, KeymapCompatible)
+        ?? throw new InvalidDataException(
+            skipped.Any(n => n.StartsWith("ZMK_", StringComparison.Ordinal))
+                ? Strings.KeymapUsesHelperMacros
+                : Strings.KeymapNodeMissing);
+
     // ---- 物理レイアウト ----
 
-    private static PhysicalLayout? ReadPhysicalLayout(DtsNode root, List<string> warnings)
+    /// <summary>
+    /// 物理レイアウトを読む。1 つのファイルに複数ある（Corne の 5 列 / 6 列など）ときは、
+    /// chosen で選ばれていてキー数が合うもの → キー数が合う最初のもの → chosen のもの → 最初のもの、の順で選ぶ。
+    /// </summary>
+    private static PhysicalLayout? ReadPhysicalLayout(DtsNode root, List<string> warnings, int keyCount)
     {
-        var node = Find(root, PhysicalLayoutCompatible);
-        if (node is null) return null;
+        var nodes = root.Descendants().Where(n => n.Compatible == PhysicalLayoutCompatible).ToList();
+        if (nodes.Count == 0) return null;
 
+        var chosenLabel = root.Descendants()
+            .Where(n => n.Name == "chosen")
+            .Select(n => n.Property("zmk,physical-layout"))
+            .SelectMany(p => p?.AllCells ?? Enumerable.Empty<DtsCell>())
+            .FirstOrDefault(c => c.IsReference)?.Text;
+
+        // 採用しなかったレイアウトの警告は混ぜない。
+        var candidates = nodes
+            .Select(node =>
+            {
+                var own = new List<string>();
+                return (Node: node, Layout: ReadLayoutNode(node, own), Warnings: own);
+            })
+            .Where(c => c.Layout is not null)
+            .ToList();
+
+        if (candidates.Count == 0)
+        {
+            warnings.Add(Strings.PhysicalLayoutHasNoKeys);
+            return null;
+        }
+
+        bool Fits(PhysicalLayout layout) => keyCount <= 0 || layout.Keys.Count == keyCount;
+
+        var chosen = candidates.FirstOrDefault(c => chosenLabel is not null && c.Node.Label == chosenLabel);
+
+        var picked =
+            chosen.Layout is not null && Fits(chosen.Layout) ? chosen
+            : candidates.FirstOrDefault(c => Fits(c.Layout!)) is { Layout: not null } fitting ? fitting
+            : chosen.Layout is not null ? chosen
+            : candidates[0];
+
+        warnings.AddRange(picked.Warnings);
+        return picked.Layout;
+    }
+
+    private static PhysicalLayout? ReadLayoutNode(DtsNode node, List<string> warnings)
+    {
         var keysProperty = node.Property("keys");
         if (keysProperty is null)
         {
@@ -495,6 +574,29 @@ public static class ZmkKeymapReader
                         combo.Layers.Add(layer);
 
             yield return combo;
+        }
+    }
+
+    // ---- 条件付きレイヤー ----
+
+    internal static IEnumerable<ConditionalLayer> ReadConditionalLayers(DtsNode root)
+    {
+        foreach (var node in root.Descendants().Where(n => n.Compatible == ConditionalLayersCompatible))
+        {
+            foreach (var child in node.Children)
+            {
+                var ifLayers = (child.Property("if-layers")?.AllCells ?? Enumerable.Empty<DtsCell>())
+                    .Select(c => DtsValue.TryParseNumber(c.Text, out var n) ? n : (int?)null)
+                    .OfType<int>()
+                    .ToList();
+
+                var then = child.Property("then-layer")?.AllCells
+                    .Select(c => DtsValue.TryParseNumber(c.Text, out var n) ? n : (int?)null)
+                    .FirstOrDefault(n => n is not null);
+
+                if (ifLayers.Count > 0 && then is { } thenLayer)
+                    yield return new ConditionalLayer { IfLayers = ifLayers, ThenLayer = thenLayer };
+            }
         }
     }
 }

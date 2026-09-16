@@ -5,7 +5,8 @@ namespace ZmkOverlay.Core.Tests;
 
 /// <summary>
 /// 変更済みキーマップの生成。devicetree としてビルドが通るかはここでは分からないので、
-/// 「読み直すと合図キーが見つかり、見た目は元と同じ」「何度かけても同じ」「元に戻せる」を守る。
+/// 「読み直すと合図キーが見つかり、見た目は元と同じ」「何度かけても同じ」「元に戻せる」
+/// 「書き換え済みなら書き換え済みと分かる」を守る。
 /// 生成する定義の形は、実機で成立を確かめた docs/examples/pyuron/layer-signal.dtsi と同じにしてある。
 /// </summary>
 public class KeymapPatcherTests : IDisposable
@@ -13,57 +14,49 @@ public class KeymapPatcherTests : IDisposable
     private readonly string _directory =
         Path.Combine(Path.GetTempPath(), "zmk-patch-" + Guid.NewGuid().ToString("N"));
 
-    private static string Fixture(string relative) =>
-        Path.Combine(AppContext.BaseDirectory, "fixtures", "zmk-config", relative);
-
-    /// <summary>テスト出力からリポジトリ直下へ戻る。</summary>
-    private static string RepositoryFile(string relative) =>
-        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", relative));
-
-    private static string PyuronSource => File.ReadAllText(Fixture("config/Pyuron.keymap"));
-
-    private static KeymapPatch PatchPyuron() => KeymapPatcher.Patch(PyuronSource, Fixture("config/Pyuron.keymap"));
+    private static KeymapPatch PatchDemo() => KeymapPatcher.Patch(Fixtures.DemoKeymapText, Fixtures.DemoKeymap);
 
     /// <summary>zmk-config と同じ並びで一時フォルダに置き、アプリと同じ読み込みで読む。</summary>
     private ZmkReadResult ReadAsConfig(string keymapText, params string[] extraFiles)
     {
         var config = Path.Combine(_directory, "config");
-        var shield = Path.Combine(config, "boards", "shields", "Pyuron");
+        var shield = Path.Combine(config, "boards", "shields", "demo40");
         Directory.CreateDirectory(shield);
 
-        File.Copy(Fixture("config/boards/shields/Pyuron/Pyuron.dtsi"), Path.Combine(shield, "Pyuron.dtsi"), overwrite: true);
+        File.Copy(Fixtures.DemoShield, Path.Combine(shield, "demo40.dtsi"), overwrite: true);
         foreach (var file in extraFiles)
-            File.Copy(RepositoryFile(file), Path.Combine(config, Path.GetFileName(file)), overwrite: true);
+            File.Copy(Fixtures.RepositoryFile(file), Path.Combine(config, Path.GetFileName(file)), overwrite: true);
 
-        var keymap = Path.Combine(config, "Pyuron.keymap");
+        var keymap = Path.Combine(config, "demo40.keymap");
         File.WriteAllText(keymap, keymapText);
 
         return ZmkKeymapReader.Read(new ZmkReadOptions { KeymapPath = keymap });
     }
 
     [Fact]
-    public void PyuronThumbLayerKeysGetSignalKeys()
+    public void ThumbLayerKeysGetSignalKeys()
     {
-        var patch = PatchPyuron();
+        var patch = PatchDemo();
 
         Assert.True(patch.Changed);
         Assert.Equal(
             new[] { (1, "F13"), (2, "F14"), (3, "F15"), (5, "F16") },
             patch.Added.Select(a => (a.Layer, a.SignalKey)));
+        Assert.Empty(patch.AlreadySignaled);
 
-        // L4 MOUSE はトラックボールで自動的に入るので、キーが無い。
+        // L4 MOUSE はポインティングデバイスで自動的に入るので、キーが無い。
         Assert.Equal(new[] { new SkippedLayer(4, SkipReason.NoEntryKey) }, patch.Skipped);
 
         // ビヘイビア名だけが変わり、引数や桁揃えの空白はそのまま。
-        Assert.Contains("&zo_lt_l1 L_SYM INT5  &zo_lt_l2 L_NAV SPACE", patch.Text);
+        Assert.Contains("&zo_lt_l1 L_SYM INT5    &zo_lt_l2 L_NAV SPACE", patch.Text);
         Assert.DoesNotContain("&lt L_", patch.Text);
     }
 
     [Fact]
     public void PatchedKeymapReadsBackWithSignalsAndLooksTheSame()
     {
-        var before = ReadAsConfig(PyuronSource).Keymap;
-        var after = ReadAsConfig(PatchPyuron().Text);
+        var before = ReadAsConfig(Fixtures.DemoKeymapText).Keymap;
+        var after = ReadAsConfig(PatchDemo().Text);
 
         Assert.Empty(after.Warnings);
         Assert.Equal(
@@ -87,28 +80,60 @@ public class KeymapPatcherTests : IDisposable
     [Fact]
     public void PatchingTwiceGivesTheSameText()
     {
-        var once = PatchPyuron();
-        var twice = KeymapPatcher.Patch(once.Text, Fixture("config/Pyuron.keymap"));
+        var once = PatchDemo();
+        var twice = KeymapPatcher.Patch(once.Text, Fixtures.DemoKeymap);
 
         Assert.Equal(once.Text, twice.Text);
         Assert.False(twice.Changed);
-        Assert.Equal(once.Added, twice.Added);
+    }
+
+    [Fact]
+    public void AlreadyPatchedKeymapIsReportedAsReady()
+    {
+        // 書き換えを GitHub にコミットして取り直した状態。画面に「書き換えが必要」と出してはいけない。
+        var twice = KeymapPatcher.Patch(PatchDemo().Text, Fixtures.DemoKeymap);
+
+        Assert.False(twice.Changed);
+        Assert.Empty(twice.Added);
+        Assert.Equal(
+            new Dictionary<int, string> { [1] = "F13", [2] = "F14", [3] = "F15", [5] = "F16" },
+            twice.AlreadySignaled);
+        Assert.Equal(new[] { new SkippedLayer(4, SkipReason.NoEntryKey) }, twice.Skipped);
+    }
+
+    [Fact]
+    public void LayerKeyAddedAfterThePatchIsTheOnlyNewOne()
+    {
+        // 書き換え済みのキーマップに、あとから L4 に入るキーを足した。
+        var patched = PatchDemo().Text.Replace("&kp G ", "&mo L_MOUSE ", StringComparison.Ordinal);
+        var again = KeymapPatcher.Patch(patched, Fixtures.DemoKeymap);
+
+        Assert.True(again.Changed);
+        Assert.Equal(new[] { (4, "F17") }, again.Added.Select(a => (a.Layer, a.SignalKey)));
+        Assert.Equal(new[] { 1, 2, 3, 5 }, again.AlreadySignaled.Keys.Order());
+        Assert.Empty(again.Skipped);
+
+        // 変更点は元のファイル（前回の生成分を含む）の行番号で示す。
+        var line = Assert.Single(KeymapPatcher.ChangedLines(patched, again.Text));
+        Assert.Contains("&mo L_MOUSE", line.Before);
+        Assert.Contains("&zo_mo_l4 L_MOUSE", line.After);
+        Assert.Contains("&mo L_MOUSE", patched.Replace("\r\n", "\n").Split('\n')[line.Line - 1]);
     }
 
     [Fact]
     public void RemovingTheGeneratedPartRestoresTheOriginal()
     {
-        Assert.Equal(PyuronSource, KeymapPatcher.RemoveGenerated(PatchPyuron().Text));
+        Assert.Equal(Fixtures.DemoKeymapText, KeymapPatcher.RemoveGenerated(PatchDemo().Text));
     }
 
     [Fact]
     public void ChangesCanBeShownBeforeReplacingTheFile()
     {
-        var patch = PatchPyuron();
+        var patch = PatchDemo();
 
-        // Pyuron では、親指の行だけが変わる。
-        var changed = Assert.Single(KeymapPatcher.ChangedLines(PyuronSource, patch.Text));
-        Assert.Equal(171, changed.Line);
+        // 親指の行だけが変わる。
+        var changed = Assert.Single(KeymapPatcher.ChangedLines(Fixtures.DemoKeymapText, patch.Text));
+        Assert.Equal(122, changed.Line);
         Assert.Contains("&lt L_SYM INT5", changed.Before);
         Assert.Contains("&zo_lt_l1 L_SYM INT5", changed.After);
 
@@ -116,22 +141,27 @@ public class KeymapPatcherTests : IDisposable
         Assert.NotNull(block);
         Assert.StartsWith(KeymapPatcher.BeginMarker, block);
         Assert.EndsWith(KeymapPatcher.EndMarker, block);
-        Assert.Null(KeymapPatcher.GeneratedBlock(PyuronSource));
+        Assert.Null(KeymapPatcher.GeneratedBlock(Fixtures.DemoKeymapText));
+    }
+
+    [Fact]
+    public void GeneratedBehaviorsHaveDisplayNames()
+    {
+        // ZMK Studio は display-name の無いビヘイビアを一覧に出せない。組み込みの &mo / &lt にも付いている。
+        var block = KeymapPatcher.GeneratedBlock(PatchDemo().Text)!;
+
+        Assert.Contains("display-name = \"Momentary Layer + F13\";", block);
+        Assert.Contains("display-name = \"Layer-Tap + F16\";", block);
     }
 
     [Fact]
     public void KeymapThatAlreadyHasSignalKeysIsLeftAlone()
     {
-        // 手順書どおり layer-signal.dtsi を手で入れた Pyuron。
-        var manual = PyuronSource
-            .Replace(
-                "#define L_SYS    5   // bluetooth / boot     - Kana hold  (pos 38)",
-                "#define L_SYS    5   // bluetooth / boot     - Kana hold  (pos 38)\n\n#include \"layer-signal.dtsi\"")
-            .Replace("&lt L_SYM INT5  &lt L_NAV SPACE", "&lt_sym L_SYM INT5  &lt_nav L_NAV SPACE")
-            .Replace("&lt L_FUNC ENTER   &lt L_SYS INT4", "&lt_func L_FUNC ENTER   &lt_sys L_SYS INT4");
+        // 手順書どおり layer-signal.dtsi を手で入れたキーマップ。
+        var manual = Fixtures.WithHandMadeSignals(Fixtures.DemoKeymapText);
 
         ReadAsConfig(manual, "docs/examples/pyuron/layer-signal.dtsi");
-        var patch = KeymapPatcher.Patch(manual, Path.Combine(_directory, "config", "Pyuron.keymap"));
+        var patch = KeymapPatcher.Patch(manual, Path.Combine(_directory, "config", "demo40.keymap"));
 
         Assert.False(patch.Changed);
         Assert.Empty(patch.Added);
@@ -151,6 +181,7 @@ public class KeymapPatcherTests : IDisposable
                     bindings = <
         &kp F13  &mo 1  &tog 2  &kp A   // &mo 3 in a comment is not a key
                     >;
+                    sensor-bindings = <&mo 2>;
                 };
 
                 lower { bindings = <&trans &trans &trans &kp B>; };
@@ -172,6 +203,7 @@ public class KeymapPatcherTests : IDisposable
 
         Assert.Contains("// &mo 3 in a comment is not a key", patch.Text);
         Assert.Contains("&kp F13  &zo_mo_l1 1  &tog 2", patch.Text);
+        Assert.Contains("sensor-bindings = <&mo 2>", patch.Text);   // レイヤーのキーではない
         Assert.Equal(new[] { new SkippedLayer(2, SkipReason.ToggleOrOneShot) }, patch.Skipped);
 
         // 定義は #include の後、最初のルートノードの前。
@@ -209,6 +241,33 @@ public class KeymapPatcherTests : IDisposable
         // 上書きは既定値より後に写す（devicetree では後に書いたものが勝つ）。
         Assert.True(block.IndexOf("<250>") > block.IndexOf("<200>"));
         Assert.Contains("&zo_lt_l1 1 SPACE", text);
+    }
+
+    [Fact]
+    public void ConditionalLayerFollowsWhenBothOfItsLayersAreSignaled()
+    {
+        // Lower + Raise で Adjust。Adjust に入るキーは無いが、合図キーの組み合わせで表示できる。
+        var patch = KeymapPatcher.Patch(
+            File.ReadAllText(Fixtures.RepositoryFile("tools/sample/corne-demo.keymap")),
+            Fixtures.RepositoryFile("tools/sample/corne-demo.keymap"));
+
+        Assert.Equal(new[] { 1, 2 }, patch.Added.Select(a => a.Layer));
+        Assert.Equal(new[] { 1, 2 }, patch.Conditional[3]);
+        Assert.Empty(patch.Skipped);
+    }
+
+    [Fact]
+    public void KeymapWithHelperMacrosIsExplained()
+    {
+        const string keymap = """
+            #include "zmk-helpers/helper.h"
+            ZMK_LAYER(base, &kp A &mo 1)
+            """;
+
+        var error = Assert.Throws<InvalidDataException>(
+            () => KeymapPatcher.Patch(keymap, Path.Combine(_directory, "helpers.keymap")));
+
+        Assert.Equal(ZmkOverlay.Core.Text.Strings.KeymapUsesHelperMacros, error.Message);
     }
 
     public void Dispose()

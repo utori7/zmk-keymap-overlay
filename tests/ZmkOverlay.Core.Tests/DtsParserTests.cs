@@ -105,4 +105,77 @@ public class DtsParserTests
 
         Assert.Contains(root.Descendants(), n => n.Name == "trackball@0" && n.Label == "trackball");
     }
+
+    [Fact]
+    public void TopLevelDirectiveDoesNotStopParsing()
+    {
+        // 以前はここで読むのをやめていて、後ろのコンボが黙って消えていた。
+        var root = DtsParser.Parse("""
+            /dts-v1/;
+            / { first { }; };
+            /delete-node/ &unused;
+            / { combos { compatible = "zmk,combos"; }; };
+            """);
+
+        Assert.Contains(root.Descendants(), n => n.Name == "first");
+        Assert.Contains(root.Descendants(), n => n.Compatible == "zmk,combos");
+    }
+
+    [Fact]
+    public void OmitIfNoRefKeepsTheNodeItMarks()
+    {
+        var root = DtsParser.Parse("""
+            / {
+                behaviors {
+                    /omit-if-no-ref/
+                    lt: layer_tap { compatible = "zmk,behavior-hold-tap"; };
+                    after = <1>;
+                };
+            };
+            /omit-if-no-ref/ &lt { tapping-term-ms = <250>; };
+            """);
+
+        var behaviors = root.Descendants().Single(n => n.Name == "behaviors");
+        Assert.Contains(behaviors.Children, n => n.Label == "lt" && n.Compatible == "zmk,behavior-hold-tap");
+        Assert.NotNull(behaviors.Property("after"));
+        Assert.Contains(root.Children, n => n.IsOverride && n.Name == "lt");
+    }
+
+    [Fact]
+    public void UnexpandedMacroAtTopLevelIsSkippedAndReported()
+    {
+        var skipped = new List<string>();
+
+        var root = DtsParser.Parse("""
+            ZMK_BEHAVIOR(hm, hold_tap, flavor = "balanced"; bindings = <&kp>, <&kp>;)
+            ZMK_LAYER(base, &kp A &mo 1)
+            / { keymap { compatible = "zmk,keymap"; }; };
+            """, skipped);
+
+        Assert.Contains(root.Descendants(), n => n.Compatible == "zmk,keymap");
+        Assert.Equal(new[] { "ZMK_BEHAVIOR", "ZMK_LAYER" }, skipped);
+    }
+
+    [Fact]
+    public void PathReferenceAndDtcIncludeAreUnderstood()
+    {
+        var root = DtsParser.Parse("""
+            /include/ "board.dtsi"
+            &{/soc/i2c@40003000} { status = "okay"; };
+            / { after { }; };
+            """);
+
+        Assert.Contains(root.Children, n => n.IsOverride && n.Name == "{/soc/i2c@40003000}");
+        Assert.Contains(root.Descendants(), n => n.Name == "after");
+    }
+
+    [Theory]
+    [InlineData("(-2400)", -2400)]
+    [InlineData("( 12 )", 12)]
+    [InlineData("0x1F", 31)]
+    public void NumbersInParenthesesAreRead(string text, int expected)
+    {
+        Assert.True(DtsValue.TryParseNumber(text, out var value));
+        Assert.Equal(expected, value);
+    }
 }

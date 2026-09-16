@@ -13,17 +13,14 @@ public class LayoutResolutionTests : IDisposable
     private readonly string _directory =
         Path.Combine(Path.GetTempPath(), "zmk-layout-" + Guid.NewGuid().ToString("N"));
 
-    private static string Fixture(string relative) =>
-        Path.Combine(AppContext.BaseDirectory, "fixtures", "zmk-config", relative);
-
     [Fact]
     public void ShieldDtsiIsFoundWithoutBeingSpecified()
     {
-        // fixture は実物の zmk-config と同じく config/boards/shields/Pyuron/Pyuron.dtsi に置いてある。
-        var result = ZmkKeymapReader.Read(new ZmkReadOptions { KeymapPath = Fixture("config/Pyuron.keymap") });
+        // fixture は実際の zmk-config と同じく config/boards/shields/demo40/demo40.dtsi に置いてある。
+        var result = ZmkKeymapReader.Read(new ZmkReadOptions { KeymapPath = Fixtures.DemoKeymap });
 
         Assert.Equal(LayoutSource.FoundNearby, result.LayoutSource);
-        Assert.EndsWith("Pyuron.dtsi", result.LayoutPath);
+        Assert.EndsWith("demo40.dtsi", result.LayoutPath);
         Assert.Equal(40, result.Layout.Keys.Count);
         Assert.Empty(result.Warnings);
     }
@@ -33,8 +30,8 @@ public class LayoutResolutionTests : IDisposable
     {
         var result = ZmkKeymapReader.Read(new ZmkReadOptions
         {
-            KeymapPath = Fixture("config/Pyuron.keymap"),
-            PhysicalLayoutPath = Fixture("config/boards/shields/Pyuron/Pyuron.dtsi"),
+            KeymapPath = Fixtures.DemoKeymap,
+            PhysicalLayoutPath = Fixtures.DemoShield,
         });
 
         Assert.Equal(LayoutSource.SpecifiedFile, result.LayoutSource);
@@ -44,9 +41,7 @@ public class LayoutResolutionTests : IDisposable
     public void KeymapAloneFallsBackToAGuessAndSaysSo()
     {
         // キーマップだけをダウンロードして持ってきた人の状況。
-        Directory.CreateDirectory(_directory);
-        var keymap = Path.Combine(_directory, "Pyuron.keymap");
-        File.Copy(Fixture("config/Pyuron.keymap"), keymap);
+        var keymap = CopyAlone(Fixtures.DemoKeymap);
 
         var result = ZmkKeymapReader.Read(new ZmkReadOptions { KeymapPath = keymap });
 
@@ -54,6 +49,24 @@ public class LayoutResolutionTests : IDisposable
         Assert.Null(result.LayoutPath);
         Assert.Equal(40, result.Layout.Keys.Count);
         Assert.Contains(Strings.LayoutGuessed, result.Warnings);
+    }
+
+    [Fact]
+    public void ShieldFetchedFromZmkIsUsedBeforeGuessing()
+    {
+        // Corne のシールドは ZMK 本体にある。取ってきた保存分を渡せば、推定せずに正しい配置が出る。
+        var keymap = CopyAlone(Fixtures.CorneKeymap);
+
+        var result = ZmkKeymapReader.Read(new ZmkReadOptions
+        {
+            KeymapPath = keymap,
+            ExtraLayoutFolders = new[] { Fixtures.CorneShieldFolder },
+        });
+
+        Assert.Equal(LayoutSource.ZmkRepository, result.LayoutSource);
+        Assert.Equal("6 Column", result.Layout.Name);
+        Assert.Equal(42, result.Layout.Keys.Count);
+        Assert.DoesNotContain(Strings.LayoutGuessed, result.Warnings);
     }
 
     [Fact]
@@ -68,6 +81,34 @@ public class LayoutResolutionTests : IDisposable
             () => ZmkKeymapReader.Read(new ZmkReadOptions { KeymapPath = keymap }));
 
         Assert.Equal(Strings.PhysicalLayoutMissing, error.Message);
+    }
+
+    [Fact]
+    public void HelperMacroKeymapIsExplained()
+    {
+        // zmk-helpers の書き方。マクロの定義は手元に無いので展開できない。
+        Directory.CreateDirectory(_directory);
+        var keymap = Path.Combine(_directory, "helpers.keymap");
+        File.WriteAllText(keymap, """
+            #include <behaviors.dtsi>
+            #include "zmk-helpers/helper.h"
+
+            ZMK_LAYER(base, &kp A &kp B &mo 1 &kp C)
+            ZMK_LAYER(nav, &trans &trans &trans &kp LEFT)
+            """);
+
+        var error = Assert.Throws<InvalidDataException>(
+            () => ZmkKeymapReader.Read(new ZmkReadOptions { KeymapPath = keymap }));
+
+        Assert.Equal(Strings.KeymapUsesHelperMacros, error.Message);
+    }
+
+    private string CopyAlone(string source)
+    {
+        Directory.CreateDirectory(_directory);
+        var copy = Path.Combine(_directory, Path.GetFileName(source));
+        File.Copy(source, copy);
+        return copy;
     }
 
     public void Dispose()

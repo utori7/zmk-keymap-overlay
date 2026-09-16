@@ -21,56 +21,27 @@ public class LayerSignalDtsiTests : IDisposable
         _directory = Path.Combine(Path.GetTempPath(), "zmk-signal-" + Guid.NewGuid().ToString("N"));
 
         var config = Path.Combine(_directory, "config");
-        var shield = Path.Combine(config, "boards", "shields", "Pyuron");
+        var shield = Path.Combine(config, "boards", "shields", "demo40");
         Directory.CreateDirectory(shield);
 
-        File.Copy(Fixture("config/boards/shields/Pyuron/Pyuron.dtsi"),
-            Path.Combine(shield, "Pyuron.dtsi"));
+        File.Copy(Fixtures.DemoShield, Path.Combine(shield, "demo40.dtsi"));
 
-        File.Copy(RepositoryFile("docs/examples/pyuron/layer-signal.dtsi"),
+        File.Copy(Fixtures.RepositoryFile("docs/examples/pyuron/layer-signal.dtsi"),
             Path.Combine(config, "layer-signal.dtsi"));
 
-        File.WriteAllText(Path.Combine(config, "Pyuron.keymap"), Patch(
-            File.ReadAllText(Fixture("config/Pyuron.keymap"))));
+        File.WriteAllText(Path.Combine(config, "demo40.keymap"),
+            Fixtures.WithHandMadeSignals(Fixtures.DemoKeymapText));
     }
 
-    /// <summary>docs/examples/pyuron/Pyuron.keymap.patch と同じ 2 か所を当てる。</summary>
-    private static string Patch(string keymap)
-    {
-        // include はレイヤー番号の #define より後に置く必要がある。
-        var patched = keymap.Replace(
-            "#define L_SYS    5   // bluetooth / boot     - Kana hold  (pos 38)",
-            "#define L_SYS    5   // bluetooth / boot     - Kana hold  (pos 38)\n\n#include \"layer-signal.dtsi\"");
+    private string PatchedKeymap => Path.Combine(_directory, "config", "demo40.keymap");
 
-        return patched.Replace(
-            "&lt L_SYM INT5  &lt L_NAV SPACE",
-            "&lt_sym L_SYM INT5  &lt_nav L_NAV SPACE").Replace(
-            "&lt L_FUNC ENTER   &lt L_SYS INT4",
-            "&lt_func L_FUNC ENTER   &lt_sys L_SYS INT4");
-    }
-
-    private static string Fixture(string relative) =>
-        Path.Combine(AppContext.BaseDirectory, "fixtures", "zmk-config", relative);
-
-    /// <summary>テスト出力からリポジトリ直下へ戻る。</summary>
-    private static string RepositoryFile(string relative) =>
-        Path.GetFullPath(Path.Combine(
-            AppContext.BaseDirectory, "..", "..", "..", "..", "..", relative));
+    private string PatchedShield => Path.Combine(_directory, "config", "boards", "shields", "demo40", "demo40.dtsi");
 
     private ZmkReadResult ReadPatched() =>
-        ZmkKeymapReader.Read(new ZmkReadOptions
-        {
-            KeymapPath = Path.Combine(_directory, "config", "Pyuron.keymap"),
-            PhysicalLayoutPath = Path.Combine(
-                _directory, "config", "boards", "shields", "Pyuron", "Pyuron.dtsi"),
-        });
+        ZmkKeymapReader.Read(new ZmkReadOptions { KeymapPath = PatchedKeymap, PhysicalLayoutPath = PatchedShield });
 
     private static ZmkReadResult ReadOriginal() =>
-        ZmkKeymapReader.Read(new ZmkReadOptions
-        {
-            KeymapPath = Fixture("config/Pyuron.keymap"),
-            PhysicalLayoutPath = Fixture("config/boards/shields/Pyuron/Pyuron.dtsi"),
-        });
+        ZmkKeymapReader.Read(new ZmkReadOptions { KeymapPath = Fixtures.DemoKeymap, PhysicalLayoutPath = Fixtures.DemoShield });
 
     [Fact]
     public void PatchedKeymapStillParsesCleanly()
@@ -140,9 +111,8 @@ public class LayerSignalDtsiTests : IDisposable
     {
         var layers = ZmkKeymapReader.Read(new ZmkReadOptions
         {
-            KeymapPath = Path.Combine(_directory, "config", "Pyuron.keymap"),
-            PhysicalLayoutPath = Path.Combine(
-                _directory, "config", "boards", "shields", "Pyuron", "Pyuron.dtsi"),
+            KeymapPath = PatchedKeymap,
+            PhysicalLayoutPath = PatchedShield,
             SignalKeys = new Dictionary<int, string> { [1] = "F20", [2] = "" },
         }).Keymap.Layers;
 

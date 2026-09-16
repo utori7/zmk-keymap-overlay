@@ -21,20 +21,29 @@ public sealed class DtsParseException : Exception
 public sealed class DtsParser
 {
     private readonly string _text;
+    private readonly ICollection<string>? _skipped;
     private int _pos;
     private int _line = 1;
 
-    private DtsParser(string text) => _text = text;
+    private DtsParser(string text, ICollection<string>? skipped)
+    {
+        _text = text;
+        _skipped = skipped;
+    }
 
     /// <summary>
     /// トップレベルの <c>/ { }</c> や <c>&amp;label { }</c> をすべて読み、
     /// ひとつの仮想ルートの下にぶら下げて返す。
     /// devicetree は同じノードを何度も開いて書き足せるが、
     /// こちらは検索しかしないので統合はせず並べておく。
+    ///
+    /// トップレベルにノード以外のもの（展開されなかったマクロ呼び出しなど）があっても、
+    /// そこで止めずに読み飛ばして先へ進む。途中で止めると、後ろにあるコンボなどが黙って消える。
+    /// 読み飛ばした名前は <paramref name="skipped"/> に入れる。
     /// </summary>
-    public static DtsNode Parse(string text)
+    public static DtsNode Parse(string text, ICollection<string>? skipped = null)
     {
-        var parser = new DtsParser(text);
+        var parser = new DtsParser(text, skipped);
         var root = new DtsNode { Name = "" };
 
         parser.SkipTrivia();
@@ -42,10 +51,13 @@ public sealed class DtsParser
         while (!parser.AtEnd)
         {
             var node = parser.ParseTopLevel();
-            if (node is null) break;
 
-            node.Parent = root;
-            root.Children.Add(node);
+            if (node is not null)
+            {
+                node.Parent = root;
+                root.Children.Add(node);
+            }
+
             parser.SkipTrivia();
         }
 
@@ -56,18 +68,13 @@ public sealed class DtsParser
 
     private char Current => _text[_pos];
 
+    /// <summary>トップレベルの要素を 1 つ読む。ノードでなければ読み飛ばして null。必ず 1 文字以上進む。</summary>
     private DtsNode? ParseTopLevel()
     {
-        if (AtEnd) return null;
-
         if (Current == '/')
         {
             // "/dts-v1/;" のような版指定や /delete-node/ は読み飛ばす。
-            if (LooksLikeSlashDirective())
-            {
-                SkipToSemicolon();
-                return null;
-            }
+            if (TrySkipSlashDirective()) return null;
 
             Advance();
             SkipTrivia();
@@ -79,7 +86,9 @@ public sealed class DtsParser
         if (Current == '&')
         {
             Advance();
-            var label = ReadName();
+
+            // &{/path/to/node} の形。パスをそのまま名前にする。
+            var label = !AtEnd && Current == '{' ? ReadBalanced('{', '}') : ReadName();
             SkipTrivia();
 
             var node = ParseNodeBody(new DtsNode { Name = label, Label = label, IsOverride = true });
@@ -87,21 +96,65 @@ public sealed class DtsParser
             return node;
         }
 
-        // 想定外のトークン。詰まらないよう 1 文字進める。
+        if (IsNameChar(Current))
+        {
+            // ZMK_LAYER(...) のような、展開できなかったマクロ呼び出し。括弧の中身ごと読み飛ばす。
+            var name = ReadName();
+            SkipTrivia();
+
+            if (!AtEnd && Current == '(') ReadBalanced('(', ')');
+            else if (!AtEnd && Current == '{') ReadBalanced('{', '}');
+
+            ExpectSemicolon();
+            _skipped?.Add(name);
+            return null;
+        }
+
+        // 想定外の記号。詰まらないよう 1 文字進める。
         Advance();
         return null;
     }
 
-    /// <summary><c>/dts-v1/</c> や <c>/delete-node/</c> のような形か。</summary>
-    private bool LooksLikeSlashDirective()
+    /// <summary>
+    /// <c>/dts-v1/;</c> や <c>/delete-node/ &amp;x;</c> のような指示なら読み飛ばして true。
+    /// <c>/omit-if-no-ref/</c> は後ろに続くノードへの修飾なので、指示だけを飛ばしてノードは読ませる。
+    /// </summary>
+    private bool TrySkipSlashDirective()
+    {
+        var name = SlashDirectiveName();
+        if (name is null) return false;
+
+        for (var i = 0; i < name.Length + 2; i++) Advance();
+
+        switch (name)
+        {
+            case "omit-if-no-ref":
+                break;
+
+            case "include":
+                // /include/ "file" にはセミコロンが付かない。
+                SkipTrivia();
+                if (!AtEnd && Current == '"') ReadString();
+                break;
+
+            default:
+                SkipToSemicolon();
+                break;
+        }
+
+        return true;
+    }
+
+    /// <summary>いまの位置が <c>/名前/</c> なら、その名前。</summary>
+    private string? SlashDirectiveName()
     {
         for (var i = _pos + 1; i < _text.Length; i++)
         {
-            if (_text[i] == '/') return true;
-            if (!char.IsLetterOrDigit(_text[i]) && _text[i] != '-') return false;
+            if (_text[i] == '/') return i > _pos + 1 ? _text[(_pos + 1)..i] : null;
+            if (!char.IsLetterOrDigit(_text[i]) && _text[i] != '-') return null;
         }
 
-        return false;
+        return null;
     }
 
     private DtsNode ParseNodeBody(DtsNode node)
@@ -121,10 +174,10 @@ public sealed class DtsParser
 
     private void ParseMember(DtsNode parent)
     {
-        // "/delete-property/ foo;" などはまとめて捨てる。
+        // "/delete-property/ foo;" などは捨てる。"/omit-if-no-ref/" は後ろのノードをそのまま読む。
         if (Current == '/')
         {
-            SkipToSemicolon();
+            if (!TrySkipSlashDirective()) SkipToSemicolon();
             return;
         }
 

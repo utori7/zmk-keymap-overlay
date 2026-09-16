@@ -17,7 +17,7 @@ public class PreprocessorTests
     [Fact]
     public void MacroDefinedInTermsOfAnotherIsExpandedFully()
     {
-        // Pyuron の JP_* はこの形。1 段で止めると LS(SEMI) が残らず壊れる。
+        // JIS 配列向けの JP_* 別名はこの形。1 段で止めると LS(SEMI) が残らず壊れる。
         var text = Run("#define JP_PLUS LS(SEMI)\nbindings = <&kp JP_PLUS>;");
 
         Assert.Contains("&kp LS(SEMI)", text);
@@ -95,5 +95,26 @@ public class PreprocessorTests
         {
             directory.Delete(recursive: true);
         }
+    }
+
+    [Fact]
+    public void SharedZmkLayoutIsFoundInTheZmkTree()
+    {
+        // corne.dtsi の <layouts/foostan/corne/6column.dtsi> は app/dts/layouts/... にある。
+        var result = new Preprocessor().ProcessFile(Fixtures.CorneShield);
+
+        Assert.Contains("foostan_corne_6col_layout", result.Text);
+        Assert.Contains("zmk,physical-layout-position-map", result.Text);   // レイアウトがさらに読み込むもの
+        Assert.Empty(result.Warnings);
+    }
+
+    [Fact]
+    public void OtherSystemHeadersAreStillSkipped()
+    {
+        // 組み込みのビヘイビア定義などが混ざると、キーマップの解釈が変わってしまう。
+        var text = Run("#include <behaviors.dtsi>\n#include <layouts/not/here.dtsi>\nvalue = <1>;");
+
+        Assert.DoesNotContain("behavior", text);
+        Assert.Contains("<1>", text);
     }
 }

@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using ZmkOverlay.Core.Dts;
 using ZmkOverlay.Core.Model;
 
@@ -10,15 +9,18 @@ namespace ZmkOverlay.Core.Zmk;
 /// ZMK のキーマップは、たいてい 1 行 = キーボードの横一列で書かれ、分割キーボードなら
 /// 左右の手のあいだを大きな空白で空けてある。その行と空白を読んで、おおよその配置を作る。
 ///
-/// 正確さは保証しない。親指の行のように、キーマップに隙間が書かれていない位置は再現できない。
-/// 画面のプレビューで利用者に確かめてもらう前提の、最後の手段。
+/// 正確さは保証しない。画面のプレビューで利用者に確かめてもらう前提の、最後の手段。
 /// </summary>
 public static class LayoutGuesser
 {
     /// <summary>1 行にこれより多く並んでいたら、行がキーボードの列を表していないとみなす。</summary>
     private const int MaxKeysPerRow = 16;
 
-    private static readonly Regex BindingsStart = new(@"\bbindings\s*=\s*<", RegexOptions.Compiled);
+    /// <summary>左右の分かれ目とみなす空白の最小幅（文字数）。ふつうの空白の 3 倍が目安で、1 文字区切りなら 3。</summary>
+    private const int MinSplitGap = 3;
+
+    /// <summary>基準の行よりこれだけ右から書き始めている短い行は、字下げして位置を示しているとみなす。</summary>
+    private const int MinIndent = 4;
 
     /// <summary>キーマップの元のテキストから推定する。行の見分けがつかなければ null。</summary>
     /// <param name="expectedKeys">最初のレイヤーのキー数。推定した数と合わなければ採用しない。</param>
@@ -42,7 +44,7 @@ public static class LayoutGuesser
         var keymap = masked.IndexOf("\"zmk,keymap\"", StringComparison.Ordinal);
         if (keymap < 0) return null;
 
-        var match = BindingsStart.Match(masked, keymap);
+        var match = KeymapPatcher.BindingsStart.Match(masked, keymap);
         if (!match.Success) return null;
 
         var start = match.Index + match.Length;
@@ -73,13 +75,15 @@ public static class LayoutGuesser
         return rows;
     }
 
+    private static int Gap(List<Token> row, int k) => row[k + 1].Start - row[k].End;
+
     /// <summary>行ごとの、左手側のキー数。左右に分かれていない行は null。</summary>
     private static int?[] FindSplits(List<List<Token>> rows)
     {
         var splits = new int?[rows.Count];
 
         var gaps = rows
-            .SelectMany(r => r.Zip(r.Skip(1), (a, b) => b.Start - a.End))
+            .SelectMany(r => Enumerable.Range(0, Math.Max(0, r.Count - 1)).Select(k => Gap(r, k)))
             .OrderBy(g => g)
             .ToList();
 
@@ -87,27 +91,28 @@ public static class LayoutGuesser
 
         // 左右の手のあいだの空白は、キー同士のふつうの空白よりずっと広い。
         var typical = gaps[gaps.Count / 2];
-        var threshold = Math.Max(6, typical * 3);
+        var threshold = Math.Max(MinSplitGap, typical * 3);
 
         for (var i = 0; i < rows.Count; i++)
         {
             var row = rows[i];
-            var widestAt = -1;
-            var widest = 0;
 
-            for (var k = 0; k + 1 < row.Count; k++)
-            {
-                var gap = row[k + 1].Start - row[k].End;
-                if (gap <= widest) continue;
+            // 広い空白が何か所かあるときは（行頭のキーの後で桁を揃えている、など）、行の中央に近いものを選ぶ。
+            var candidates = Enumerable.Range(0, Math.Max(0, row.Count - 1))
+                .Where(k => Gap(row, k) >= threshold)
+                .OrderBy(k => Math.Abs(k + 1 - row.Count / 2.0))
+                .ThenByDescending(k => Gap(row, k))
+                .ToList();
 
-                widest = gap;
-                widestAt = k;
-            }
-
-            if (widestAt >= 0 && widest >= threshold) splits[i] = widestAt + 1;
+            if (candidates.Count > 0) splits[i] = candidates[0] + 1;
         }
 
-        // 分割キーボードでも、左右を詰めて書いた行がある（Pyuron の下段など）。
+        // 分かれ目が見つかった行が半分に満たなければ、たまたま広い空白があっただけとみなす。
+        var multiKeyRows = rows.Count(r => r.Count > 1);
+        if (splits.Count(s => s is not null) * 2 < multiKeyRows)
+            return new int?[rows.Count];
+
+        // 分割キーボードでも、左右を詰めて書いた行がある。
         // 他の行が分かれていて、この行が偶数個なら、真ん中で分かれているとみなす。
         if (splits.Any(s => s is not null))
         {
@@ -118,7 +123,12 @@ public static class LayoutGuesser
         return splits;
     }
 
-    /// <summary>左手は左端から、右手は右端に揃えて並べる。左右のあいだは 1u 空ける。</summary>
+    /// <summary>
+    /// 左手は左端から、右手は右端に揃えて並べる。左右のあいだは 1u 空ける。
+    ///
+    /// ただし、いちばん長い行より字下げして書かれた短い行（Corne の親指の段など）は、
+    /// 左右とも手のあいだ寄りに置く。分かれていない短い行は中央に置く。
+    /// </summary>
     private static PhysicalLayout Place(List<List<Token>> rows, int?[] splits)
     {
         var maxLeft = 0;
@@ -132,18 +142,41 @@ public static class LayoutGuesser
             maxRight = Math.Max(maxRight, rows[i].Count - left);
         }
 
-        var rightEdge = maxLeft + 1 + maxRight;
+        var isSplit = splits.Any(s => s is not null);
+        var rightStart = maxLeft + 1;
+        var rightEdge = rightStart + maxRight;
+
+        var widest = rows.Max(r => r.Count);
+        var reference = rows.First(r => r.Count == widest);
+        var width = isSplit ? rightEdge : widest;
+
+        bool Indented(List<Token> row) => row.Count < widest && row[0].Start - reference[0].Start >= MinIndent;
+
         var layout = new PhysicalLayout { Name = "Guessed" };
 
         for (var i = 0; i < rows.Count; i++)
         {
             var count = rows[i].Count;
-            var left = splits[i] ?? count;
+            var indented = Indented(rows[i]);
 
             for (var k = 0; k < count; k++)
             {
-                var column = k < left ? k : rightEdge - (count - left) + (k - left);
-                layout.Keys.Add(new PhysicalKey { X = column * 100, Y = i * 100 });
+                double column;
+
+                if (splits[i] is { } left)
+                {
+                    var right = count - left;
+
+                    column = k < left
+                        ? (indented ? maxLeft - left : 0) + k
+                        : (indented ? rightStart : rightEdge - right) + (k - left);
+                }
+                else
+                {
+                    column = (indented ? (width - count) / 2.0 : 0) + k;
+                }
+
+                layout.Keys.Add(new PhysicalKey { X = (int)Math.Round(column * 100), Y = i * 100 });
             }
         }
 

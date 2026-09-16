@@ -88,9 +88,15 @@ public sealed class DtsNode
 
 public static class DtsValue
 {
+    /// <summary>
+    /// 数値を読む。<c>(-1500)</c> のように括弧で囲んだもの（ZMK の物理レイアウトで負の回転角を書く形）も読む。
+    /// </summary>
     public static bool TryParseNumber(string text, out int value)
     {
         text = text.Trim();
+
+        while (text.Length >= 2 && text[0] == '(' && text[^1] == ')')
+            text = text[1..^1].Trim();
 
         if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
             return int.TryParse(text[2..], System.Globalization.NumberStyles.HexNumber,
