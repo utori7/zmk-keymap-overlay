@@ -27,6 +27,20 @@ internal static class UiText
     public static string UnknownCause => T("原因不明", "Unknown cause");
     public static string LayersNotFollowed => T("追従できないレイヤーがあります", "Some layers cannot be followed");
 
+    public static string KeymapNotLoaded => T("キーマップを読み込めませんでした", "Could not load your keymap");
+
+    public static string StartupFellBack(string reason) =>
+        T($"キーマップを読み込めなかったので、サンプルを表示しています（{reason}）。キーマップの場所を選び直してください。",
+          $"Your keymap could not be loaded, so the sample is shown ({reason}). Please choose your keymap again.");
+
+    public static string SettingsFileReset => T("設定ファイルを作り直しました", "The settings file was recreated");
+
+    public static string ConfigWasBroken(string movedTo, string reason) =>
+        T($"設定ファイルを読めなかったので（{reason}）、{movedTo} に移して初めからやり直します。",
+          $"The settings file could not be read ({reason}). It was moved to {movedTo}, and setup starts over.");
+
+    public static string ZmkFetchProblem => T("キーの並びを取得できませんでした", "Could not get the key positions");
+
     // ---- トレイ ----
 
     public static string Disable => T("無効にする", "Disable");
@@ -75,6 +89,10 @@ internal static class UiText
     public static string SignalKeyUnrecognized(int layerId, string key) =>
         T($"L{layerId}: キー '{key}' を解釈できません", $"L{layerId}: unrecognized key '{key}'");
 
+    public static string HotkeyTypesCharacter(string spec) =>
+        T($"{spec} はこの PC のキーボード配列で文字の入力に使われるので、登録しませんでした。設定画面の「ショートカット」で別の組み合わせを選んでください。",
+          $"{spec} types a character with this PC's keyboard layout, so it was not registered. Choose another combination in Settings → Shortcuts.");
+
     // ---- 自動起動 ----
 
     public static string ExePathUnknown => T("実行ファイルの場所を特定できません。", "Cannot determine the executable path.");
@@ -109,8 +127,8 @@ internal static class UiText
 
     // キーボード
     public static string SampleNote =>
-        T("いまはサンプルのキーボード（Pyuron）を表示しています。自分のキーマップ（.keymap）を選んでください。",
-          "You are looking at a sample keyboard (Pyuron). Choose your own keymap (.keymap).");
+        T("いまはサンプルのキーボード（Corne）を表示しています。自分のキーマップ（.keymap）を選んでください。",
+          "You are looking at a sample keyboard (Corne). Choose your own keymap (.keymap).");
 
     public static string SectionKeymap => T("PC のファイルから読み込む", "Load from files on this PC");
 
@@ -145,13 +163,36 @@ internal static class UiText
     public static string LayoutFileLabel => T("物理レイアウト", "Physical layout");
     public static string Browse => T("選ぶ…", "Browse…");
     public static string UseKeymapLayout => T("自動で探す", "Find automatically");
-    public static string SampleKeymap => T("サンプル（Pyuron）", "Sample (Pyuron)");
+    public static string SampleKeymap => T("サンプル（Corne）", "Sample (Corne)");
     public static string LayoutInKeymap => T("キーマップの中に書かれていたもの", "Defined in the keymap");
     public static string LayoutFoundNearby(string path) => T($"自動で見つけたもの: {path}", $"Found automatically: {path}");
 
+    public static string LayoutFromZmk(string? shield) =>
+        T($"ZMK 本体から取得したもの（{shield}）", $"Downloaded from ZMK ({shield})");
+
     public static string LayoutGuessedLabel =>
-        T("キーマップの並びから推定（配置が違うときはファイルを選んでください）",
-          "Guessed from the keymap (choose a file if it looks wrong)");
+        T("キーマップの並びから推定（配置が違うときは「ZMK 本体から取得」を試してください）",
+          "Guessed from the keymap (try \"Get from ZMK\" if it looks wrong)");
+
+    // ZMK 本体からキーの並びを取る
+    public static string SectionZmkLayout => T("ZMK 本体からキーの並びを取得", "Get key positions from ZMK");
+
+    public static string ZmkLayoutNote =>
+        T("Corne・Lily58・Sofle など、ZMK 本体に定義があるキーボード向けです。zmk-config の build.yaml の shield に書かれている名前" +
+          "（例: corne。_left / _right は付けなくて構いません）を入れて押してください。通信するのは、このボタンを押したときだけです。",
+          "For keyboards defined in ZMK itself, such as Corne, Lily58 and Sofle. Enter the shield name from your zmk-config's build.yaml " +
+          "(for example: corne; _left / _right can be left out) and press the button. The app goes online only when you press it.");
+
+    public static string ZmkShieldLabel => T("シールド名", "Shield name");
+    public static string ZmkFetch => T("ZMK 本体から取得", "Get from ZMK");
+    public static string ZmkFetching => T("ZMK 本体から取得しています…", "Downloading from ZMK…");
+
+    public static string ZmkFetched(string? shield) =>
+        T($"ZMK 本体の {shield} のキーの並びを使っています。", $"Using the key positions of {shield} from ZMK.");
+
+    public static string ZmkFetchedButNotUsed =>
+        T("取得しましたが、キーの数が合わないため使っていません。シールド名を確認してください。",
+          "Downloaded, but the number of keys does not match, so it is not used. Check the shield name.");
     public static string ChooseKeymap => T("キーマップを選ぶ", "Choose a keymap");
     public static string ChooseLayout => T("物理レイアウトを選ぶ", "Choose the physical layout");
 
@@ -164,8 +205,16 @@ internal static class UiText
           "Devicetree (*.dtsi;*.overlay;*.keymap)|*.dtsi;*.overlay;*.keymap|All files (*.*)|*.*");
 
     public static string LayoutNeeded =>
-        T("このキーマップにはキーの並び（物理レイアウト）が含まれていません。続けて、シールドの .dtsi を選んでください。",
-          "This keymap does not describe where the keys are (physical layout). Next, choose your shield's .dtsi file.");
+        T("このキーマップからはキーの並び（物理レイアウト）が分かりませんでした。続けて、キーの並びが書かれた .dtsi を選んでください。",
+          "The key positions (physical layout) could not be worked out from this keymap. Next, choose a .dtsi file that describes them.");
+
+    public static string LayoutNeededAskZmk(string shield) =>
+        T($"このキーマップからはキーの並び（物理レイアウト）が分かりませんでした。\n\n" +
+          $"build.yaml によると、キーボードは {shield} です。ZMK 本体からキーの並びを取得しますか？（インターネットに接続します）\n\n" +
+          "「いいえ」を選ぶと、キーの並びが書かれた .dtsi を選べます。",
+          $"The key positions (physical layout) could not be worked out from this keymap.\n\n" +
+          $"According to build.yaml, the keyboard is {shield}. Download its key positions from ZMK? (This goes online.)\n\n" +
+          "Choose \"No\" to pick a .dtsi file that describes them instead.");
 
     public static string SectionHostLayout => T("PC のキーボード配列", "Keyboard layout on this PC");
     public static string HostJis => T("日本語配列（JIS）", "Japanese (JIS)");
@@ -251,6 +300,10 @@ internal static class UiText
     public static string ShortcutConflict(string spec, string usedFor) =>
         T($"{spec} は「{usedFor}」に使われています", $"{spec} is already used for \"{usedFor}\"");
 
+    public static string ShortcutTypesCharacter(string spec) =>
+        T($"{spec} はこの PC の配列で文字の入力に使われます。別の組み合わせを押してください",
+          $"{spec} types a character with this PC's layout. Press another combination");
+
     public static string LayerShortcutUse(int layerId) => T($"L{layerId} の表示", $"showing L{layerId}");
     public static string SignalKeyUse(int layerId) => T($"L{layerId} の合図キー", $"the signal key of L{layerId}");
 
@@ -303,14 +356,14 @@ internal static class UiText
     public static string ChoiceLocalTitle => T("この PC にファイルがある", "On this PC");
 
     public static string ChoiceLocalNote =>
-        T(".keymap ファイルを選びます。キーの並び（物理レイアウト）は同じフォルダから自動で探します。",
-          "Choose your .keymap file. The key positions (physical layout) are looked up in the same folder.");
+        T(".keymap ファイルを選びます。キーの並び（物理レイアウト）は同じフォルダから自動で探し、無ければ推定します。",
+          "Choose your .keymap file. The key positions (physical layout) are looked up in the same folder, or guessed.");
 
     public static string ChoiceSampleTitle => T("まずはサンプルで試す", "Just try a sample");
 
     public static string ChoiceSampleNote =>
-        T("作者のキーボード（Pyuron）の配置で、見た目と操作を確かめます。あとから自分のものに変えられます。",
-          "See how it looks with the author's keyboard (Pyuron). You can switch to your own later.");
+        T("定番の分割キーボード Corne の配置で、見た目と操作を確かめます。あとから自分のものに変えられます。",
+          "See how it looks with Corne, a popular split keyboard. You can switch to your own later.");
 
     public static string UseSample => T("サンプルを使う", "Use the sample");
     public static string SourceCurrent(string what) => T($"いまの読み込み元: {what}", $"Current source: {what}");
@@ -318,8 +371,10 @@ internal static class UiText
     public static string ShapeTitle => T("キーボードの形は合っていますか？", "Does this look like your keyboard?");
 
     public static string ShapeLead =>
-        T("キーの並びが実物と違うときは、シールドの .dtsi を選んでください。PC の配列（JIS / US）もここで合わせます。",
-          "If the key positions don't match, choose your shield's .dtsi file. Set this PC's keyboard layout (JIS / US) here too.");
+        T("キーの並びが実物と違うときは、下の「ZMK 本体から取得」を試すか、キーの並びが書かれた .dtsi を選んでください。" +
+          "PC の配列（JIS / US）もここで合わせます。",
+          "If the key positions don't match, try \"Get from ZMK\" below, or choose a .dtsi file that describes them. " +
+          "Set this PC's keyboard layout (JIS / US) here too.");
 
     public static string ShapeSourceLabel(string what) => T($"キーの並び: {what}", $"Key positions: {what}");
     public static string ShapeBrowse => T("物理レイアウトを選ぶ…", "Choose physical layout…");
@@ -331,6 +386,14 @@ internal static class UiText
           "書き換え済みのキーマップをアプリが用意しました。普段使わない F13〜F24 を合図に使い、ほかのアプリには届きません。",
           "To tell the PC which layer you're on, your keyboard firmware needs a small change. " +
           "The app has prepared an updated keymap. It uses the unused keys F13–F24 as signals; other apps never see them.");
+
+    public static string FirmwareLeadUpdate =>
+        T("このキーマップには、以前このアプリで入れた合図キーがあります。キーマップの変更に合わせて、その部分を更新します。",
+          "This keymap has signal keys that this app added before. They will be updated to match your latest keymap.");
+
+    public static string FirmwareConditional(IEnumerable<int> ifLayers) =>
+        T($"{string.Join(" と ", ifLayers.Select(l => $"L{l}"))} を同時に押すと表示されます",
+          $"Shown while {string.Join(" and ", ifLayers.Select(l => $"L{l}"))} are held together");
 
     public static string FirmwareLeadReady =>
         T("このキーマップには合図キーが入っています。キーボードに書き込み済みなら、次のステップで確かめられます。",
@@ -438,8 +501,10 @@ internal static class UiText
     public static string DoneTitle => T("準備ができました", "You're all set");
 
     public static string DoneLead(string toggleHotkey) =>
-        T($"オーバーレイは、画面右下のトレイにあるアイコンから操作できます。{toggleHotkey} で有効・無効を切り替えられます。" +
-          "設定はトレイの「設定…」からいつでも変えられます。",
-          $"Use the icon in the system tray (bottom right) to control the overlay. {toggleHotkey} turns it on and off. " +
-          "You can change settings any time from \"Settings…\" in the tray.");
+        T($"オーバーレイは、画面右下のトレイにあるアイコンから操作できます（見当たらなければ、タスクバーの「^」の中にあります）。" +
+          $"{toggleHotkey} で有効・無効を切り替えられます。" +
+          "設定はトレイの「設定…」からいつでも変えられます。exe をもう一度開いても、設定画面が開きます。",
+          $"Use the icon in the system tray (bottom right) to control the overlay. If you can't see it, it is under \"^\" on the taskbar. " +
+          $"{toggleHotkey} turns it on and off. " +
+          "You can change settings any time from \"Settings…\" in the tray, or by opening the app again.");
 }

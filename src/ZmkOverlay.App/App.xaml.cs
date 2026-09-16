@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
+using System.Threading;
 using System.Windows;
 using ZmkOverlay.App.Interop;
 using ZmkOverlay.App.Overlay;
@@ -15,6 +18,20 @@ namespace ZmkOverlay.App;
 
 public partial class App : Application, ISettingsHost
 {
+    /// <summary>
+    /// 同じ利用者のセッションで 1 つだけ動かすための名前。2 つ目が動くと、ホットキーと合図キーを取れずに
+    /// 「登録できません」が並び、トレイのアイコンも 2 つになる。
+    /// </summary>
+    private const string InstanceName = @"Local\ZmkOverlay.Instance";
+
+    /// <summary>2 つ目に起動されたときに、1 つ目へ「前に出て」と伝える合図。</summary>
+    private const string ActivateName = @"Local\ZmkOverlay.Activate";
+
+    private Mutex? _instance;
+    private bool _ownsInstance;
+    private EventWaitHandle? _activate;
+    private RegisteredWaitHandle? _activateWait;
+
     private HotKeyService? _hotKeys;
     private OverlayController? _overlay;
     private LayerSyncService? _layerSync;
@@ -59,6 +76,9 @@ public partial class App : Application, ISettingsHost
             args.Handled = true;
         };
 
+        // 文字の入力に使われる組み合わせをホットキーにしない。判定には Windows の配列情報が要る。
+        HotkeyRules.TypesCharacter = KeyboardLayouts.TypesCharacter;
+
         try
         {
             // --config で設定ファイルを明示できる。既定の探索場所を汚さずに
@@ -71,6 +91,12 @@ public partial class App : Application, ISettingsHost
             if (TryRunRenderWindowMode(e.Args)) return;
             if (TryRunStartupMode(e.Args)) return;
 
+            if (!ClaimSingleInstance())
+            {
+                Shutdown();
+                return;
+            }
+
             Initialize();
         }
         catch (Exception ex)
@@ -78,6 +104,62 @@ public partial class App : Application, ISettingsHost
             ShowError(UiText.StartupFailed, ex);
             Shutdown(1);
         }
+    }
+
+    /// <summary>
+    /// 1 つ目の起動なら true。すでに動いていれば、そちらに設定画面を開かせて false。
+    /// exe をもう一度ダブルクリックした人には、設定画面が出てくるように見える。
+    /// </summary>
+    private bool ClaimSingleInstance()
+    {
+        _instance = new Mutex(initiallyOwned: true, InstanceName, out var created);
+        _ownsInstance = created;
+
+        if (!created)
+        {
+            try
+            {
+                _ownsInstance = _instance.WaitOne(0);
+            }
+            catch (AbandonedMutexException)
+            {
+                // 前のアプリが終了処理を経ずに落ちた。持ち主はいないので、こちらが引き継ぐ。
+                _ownsInstance = true;
+            }
+        }
+
+        if (!_ownsInstance)
+        {
+            // 1 つ目が前に出られるように、前面に出る権利を渡してから知らせる。
+            NativeMethods.AllowSetForegroundWindow(NativeMethods.ASFW_ANY);
+            if (EventWaitHandle.TryOpenExisting(ActivateName, out var existing))
+            {
+                using (existing) existing.Set();
+            }
+
+            _instance.Dispose();
+            _instance = null;
+            return false;
+        }
+
+        _activate = new EventWaitHandle(false, EventResetMode.AutoReset, ActivateName);
+        _activateWait = ThreadPool.RegisterWaitForSingleObject(
+            _activate,
+            (_, _) => Dispatcher.BeginInvoke(BringToFront),
+            null,
+            Timeout.Infinite,
+            executeOnlyOnce: false);
+
+        return true;
+    }
+
+    /// <summary>もう一度起動された。初期設定の途中ならそれを、そうでなければ設定画面を前に出す。</summary>
+    private void BringToFront()
+    {
+        if (_overlay is null) return;
+
+        if (_setup is not null) OpenSetup(null);
+        else OpenSettings(SettingsPage.Keyboard);
     }
 
     /// <summary>
@@ -90,7 +172,7 @@ public partial class App : Application, ISettingsHost
         if (index < 0) return false;
 
         var outputDir = index + 1 < args.Length ? args[index + 1] : "render-out";
-        var (config, path, _) = LoadConfig();
+        var (config, path, _, _) = LoadConfig(recover: false);
         var loaded = LoadKeymap(config, path);
         var panels = Render.KeymapRenderer.BuildPanels(config, loaded.Layout, loaded.Keymap);
 
@@ -121,7 +203,7 @@ public partial class App : Application, ISettingsHost
         var index = Math.Max(settingsIndex, setupIndex);
         var outputDir = index + 1 < args.Length ? args[index + 1] : "render-out";
 
-        var (config, path, _) = LoadConfig();
+        var (config, path, _, _) = LoadConfig(recover: false);
         var loaded = LoadKeymap(config, path);
 
         _configPath = path;
@@ -201,10 +283,33 @@ public partial class App : Application, ISettingsHost
         return true;
     }
 
+    /// <summary>
+    /// 常駐を始める。
+    ///
+    /// キーマップが読めなくても起動をやめない。やめると設定画面も初期設定も開けず、利用者に残る手段が
+    /// 「config.json を探して消す」だけになる。サンプルを表示して起動し、キーマップを選び直してもらう。
+    /// 選び直すまで設定ファイルは書き換えないので、ファイルが戻ってくれば（USB メモリなど）次回はそのまま読める。
+    /// </summary>
     private void Initialize()
     {
-        var (config, path, firstRun) = LoadConfig();
-        var loaded = LoadKeymap(config, path);
+        var (config, path, firstRun, notice) = LoadConfig(recover: true);
+
+        string? fellBack = null;
+        LoadedKeymap loaded;
+
+        try
+        {
+            loaded = LoadKeymap(config, path);
+        }
+        catch (Exception ex)
+        {
+            fellBack = UiText.StartupFellBack(ex.Message);
+            config = WithSample(config, path);
+
+            // サンプルまで読めない（data フォルダが無い）ときだけ、起動をやめる。
+            var sample = LoadKeymap(config, path);
+            loaded = WithFirstWarning(sample, fellBack);
+        }
 
         _configPath = path;
         _config = config;
@@ -227,7 +332,7 @@ public partial class App : Application, ISettingsHost
             setAlwaysVisible: SetAlwaysVisible,
             showWarnings: () => OpenSettings(SettingsPage.Keyboard));
 
-        _tray.Configure(config.ToggleHotkey.ToString(), _overlay.Layers, id => config.ManualLayerHotkey(id)?.ToString());
+        ConfigureTray(config);
 
         StartLayerSync(config);
         RefreshHotkeys();
@@ -236,35 +341,115 @@ public partial class App : Application, ISettingsHost
         _tray.ShowState(_overlay.IsEnabled, notify: false);
         _tray.ReportWarnings(_warnings);
 
-        // 初めて起動した人は、何をすればよいか分からない。サンプルを出したまま案内を開く。
-        if (firstRun) OpenSetup(SetupStep.Welcome);
+        // exe のフォルダを移したあとも、サインイン時に起動できるように。
+        StartupEntry.RepairIfMoved();
+
+        if (notice is not null)
+            _tray.Notify(UiText.SettingsFileReset, notice, System.Windows.Forms.ToolTipIcon.Warning);
+
+        if (fellBack is not null)
+        {
+            _tray.Notify(UiText.KeymapNotLoaded, fellBack, System.Windows.Forms.ToolTipIcon.Warning,
+                onClick: () => OpenSetup(SetupStep.Source, fellBack));
+            OpenSetup(SetupStep.Source, fellBack);
+        }
+        else if (firstRun)
+        {
+            // 初めて起動した人は、何をすればよいか分からない。サンプルを出したまま案内を開く。
+            OpenSetup(SetupStep.Welcome, notice);
+        }
     }
 
     // ---- 読み込みと反映 ----
 
-    /// <summary>設定ファイルを読む。無ければ既定値で作る（<c>Created</c> が true）。</summary>
-    private (AppConfig Config, string Path, bool Created) LoadConfig()
+    /// <summary>
+    /// 設定ファイルを読む。無ければ既定値で作る（<c>Created</c> が true）。
+    ///
+    /// <paramref name="recover"/> のときは、起動できなくなる状態をここで直す。
+    /// 読めないファイルは退避して作り直し（<c>Notice</c> に理由）、古い場所を指すサンプルのパスは向け直す。
+    /// --config で明示されたファイルは開発用なので、退避しない。
+    /// </summary>
+    private (AppConfig Config, string Path, bool Created, string? Notice) LoadConfig(bool recover)
     {
         var path = _configOverride ?? ConfigPaths.FindConfig();
+        string? notice = null;
 
-        if (path is not null) return (AppConfig.Load(path), path, false);
-
-        // 初回起動。既定値を書き出して、以後は利用者が編集できるようにする。
-        var created = new AppConfig();
-        path = ConfigPaths.DefaultWriteTarget();
-
-        // exe の隣に書けず %APPDATA% に置いたときは、同梱のサンプルを相対パスでは指せない。
-        var configFolder = System.IO.Path.GetDirectoryName(path);
-        if (!string.Equals(configFolder, ConfigPaths.ExeDirectory, StringComparison.OrdinalIgnoreCase))
+        if (path is not null)
         {
-            created.LayoutFile = System.IO.Path.Combine(ConfigPaths.ExeDirectory, created.LayoutFile);
-            created.KeymapFile = System.IO.Path.Combine(ConfigPaths.ExeDirectory, created.KeymapFile);
+            try
+            {
+                var config = AppConfig.Load(path);
+
+                if (recover && ConfigRecovery.RepairSamplePaths(config, path, ConfigPaths.ExeDirectory))
+                    TrySave(config, path);
+
+                return (config, path, false, null);
+            }
+            catch (JsonException ex) when (recover && _configOverride is null)
+            {
+                var moved = ConfigRecovery.Quarantine(path, DateTime.Now);
+                notice = UiText.ConfigWasBroken(moved, ex.Message);
+            }
         }
+
+        // 初回起動（または作り直し）。既定値を書き出して、以後は利用者が編集できるようにする。
+        path ??= ConfigPaths.DefaultWriteTarget();
+
+        var (layout, keymap) = ConfigPaths.SampleFiles(path);
+        var created = new AppConfig
+        {
+            LayoutFile = layout,
+            KeymapFile = keymap,
+
+            // PC のキーボードに合わせる。記号の表示が変わるので、英語配列の人に日本語配列の表示を出さない。
+            KeyboardLayout = KeyboardLayouts.DetectHostLayout(),
+
+            // AltGr で文字を打つ配列では、Ctrl+Alt+K を取ると文字が打てなくなる。
+            ToggleHotkey = HotkeyRules.ChooseDefaultToggle(),
+        };
 
         created.Save(path);
 
-        return (created, path, true);
+        return (created, path, true, notice);
     }
+
+    private static void TrySave(AppConfig config, string path)
+    {
+        try
+        {
+            config.Save(path);
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
+        {
+            // 直した内容を保存できなくても、今回は直した値で動く。次回も同じように直す。
+        }
+    }
+
+    /// <summary>設定の中のキーマップだけを同梱のサンプルに差し替えた複製。</summary>
+    private static AppConfig WithSample(AppConfig config, string configPath)
+    {
+        var (layout, keymap) = ConfigPaths.SampleFiles(configPath);
+
+        var sample = config.Clone();
+        sample.Zmk.KeymapFile = null;
+        sample.Zmk.PhysicalLayoutFile = null;
+        sample.Zmk.ShieldLayoutFolder = null;
+        sample.Zmk.Source = "local";
+        sample.LayoutFile = layout;
+        sample.KeymapFile = keymap;
+        return sample;
+    }
+
+    private static LoadedKeymap WithFirstWarning(LoadedKeymap loaded, string warning) =>
+        new()
+        {
+            Layout = loaded.Layout,
+            Keymap = loaded.Keymap,
+            Warnings = new[] { warning }.Concat(loaded.Warnings).ToList(),
+            FromZmkSource = loaded.FromZmkSource,
+            LayoutSource = loaded.LayoutSource,
+            LayoutPath = loaded.LayoutPath,
+        };
 
     /// <summary>キーのラベルも表示言語で変わるので、キーマップを読むより先に言語を決める。</summary>
     private static LoadedKeymap LoadKeymap(AppConfig config, string configPath)
@@ -276,27 +461,43 @@ public partial class App : Application, ISettingsHost
         return KeymapLoader.Load(config, configPath);
     }
 
+    /// <summary>キーマップの読み込み結果を左右する値。これが変わらなければ、ファイルを読み直す必要はない。</summary>
+    private static string LoadInputs(AppConfig config) =>
+        JsonSerializer.Serialize(
+            new { config.LayoutFile, config.KeymapFile, config.Zmk, config.KeyboardLayout, config.Language },
+            AppConfig.SerializerOptions);
+
     /// <summary>
     /// 設定を反映する唯一の経路。トレイ・設定画面・再読み込みはすべてここを通る。
     ///
     /// 先にキーマップを読み、読めたときだけ反映して保存する。
     /// 読めない設定を保存すると、次に起動したときに立ち上がらなくなるため。
+    ///
+    /// 大きさや位置のように読み込みに関係しない値だけが変わったときは、前回読んだものを使う。
+    /// スライダーを動かすたびに、キーマップのフォルダを探し直さないように。
     /// </summary>
-    private bool TryApply(AppConfig config, bool save, out string? error)
+    private bool TryApply(AppConfig config, bool save, bool reload, out string? error)
     {
         var previousLanguage = Strings.Language;
         LoadedKeymap loaded;
 
-        try
+        if (!reload && LoadInputs(config) == LoadInputs(_config))
         {
-            loaded = LoadKeymap(config, _configPath);
+            loaded = _loaded;
         }
-        catch (Exception ex)
+        else
         {
-            // 読み込みの前に言語だけ切り替わっているので戻す。
-            Strings.Language = previousLanguage;
-            error = ex.Message;
-            return false;
+            try
+            {
+                loaded = LoadKeymap(config, _configPath);
+            }
+            catch (Exception ex)
+            {
+                // 読み込みの前に言語だけ切り替わっているので戻す。
+                Strings.Language = previousLanguage;
+                error = ex.Message;
+                return false;
+            }
         }
 
         Commit(config, loaded);
@@ -330,7 +531,7 @@ public partial class App : Application, ISettingsHost
         _overlay!.Reload(config, _layout, _keymap);
 
         _tray?.SyncAlwaysVisible(config.IsAlwaysVisible);
-        _tray?.Configure(config.ToggleHotkey.ToString(), _overlay.Layers, id => config.ManualLayerHotkey(id)?.ToString());
+        ConfigureTray(config);
 
         _layerSync?.Dispose();
         StartLayerSync(config);
@@ -342,6 +543,13 @@ public partial class App : Application, ISettingsHost
         Applied?.Invoke();
     }
 
+    /// <summary>トレイのメニューには、実際に登録するショートカットだけを並べる。</summary>
+    private void ConfigureTray(AppConfig config) =>
+        _tray?.Configure(
+            HotkeyRules.TypesCharacter(config.ToggleHotkey) ? "" : config.ToggleHotkey.ToString(),
+            _overlay!.Layers,
+            id => config.ManualLayerHotkey(id) is { } spec && !HotkeyRules.TypesCharacter(spec) ? spec.ToString() : null);
+
     /// <summary>
     /// 設定ファイルとキーマップを読み直す。GitHub から読んでいるときは、先に取り直す。
     /// 通信できなくても保存済みのファイルで続ける。起動や表示を通信に依存させないため。
@@ -350,7 +558,7 @@ public partial class App : Application, ISettingsHost
     {
         try
         {
-            var (config, path, _) = LoadConfig();
+            var (config, path, _, _) = LoadConfig(recover: false);
             _configPath = path;
 
             var fetched = false;
@@ -358,8 +566,11 @@ public partial class App : Application, ISettingsHost
             {
                 try
                 {
-                    await GitHubSync.RefreshAsync(config, path, _gitHub);
+                    var notice = await GitHubSync.RefreshAsync(config, path, _gitHub);
                     fetched = true;
+
+                    if (notice is not null)
+                        _tray?.Notify(UiText.ZmkFetchProblem, notice, System.Windows.Forms.ToolTipIcon.Warning);
                 }
                 catch (Exception ex) when (ex is GitHubSourceException or System.IO.IOException or UnauthorizedAccessException)
                 {
@@ -369,7 +580,7 @@ public partial class App : Application, ISettingsHost
 
             // 取り直すとキーマップの保存先が書き換わることがあるので、そのときは保存する。
             // 読んだだけのときは保存しない（手で書いた設定ファイルの体裁を崩さないため）。
-            if (!TryApply(config, save: fetched, out var error))
+            if (!TryApply(config, save: fetched, reload: true, out var error))
                 ShowError(UiText.ReloadFailed, new InvalidOperationException(error));
         }
         catch (Exception ex)
@@ -387,7 +598,7 @@ public partial class App : Application, ISettingsHost
         var next = _config.Clone();
         next.DisplayMode = always ? "always" : "layersOnly";
 
-        if (!TryApply(next, save: true, out var error))
+        if (!TryApply(next, save: true, reload: false, out var error))
             _tray?.Notify(UiText.CannotSaveSettings, error ?? UiText.UnknownCause,
                 System.Windows.Forms.ToolTipIcon.Warning);
     }
@@ -407,7 +618,9 @@ public partial class App : Application, ISettingsHost
         _settings.Activate();
     }
 
-    private void OpenSetup(SetupStep step)
+    /// <param name="step">開くステップ。null なら開いているステップのまま前に出す。</param>
+    /// <param name="notice">ステップの下に出しておく知らせ。</param>
+    private void OpenSetup(SetupStep? step, string? notice = null)
     {
         if (_setup is null)
         {
@@ -416,7 +629,8 @@ public partial class App : Application, ISettingsHost
             _setup.Show();
         }
 
-        _setup.ShowStep(step);
+        if (step is { } target) _setup.ShowStep(target);
+        if (notice is not null) _setup.ShowNotice(notice);
 
         if (_setup.WindowState == WindowState.Minimized) _setup.WindowState = WindowState.Normal;
         _setup.Activate();
@@ -474,18 +688,28 @@ public partial class App : Application, ISettingsHost
 
     private void RegisterToggleHotKey(AppConfig config)
     {
-        _toggleRegistration = _hotKeys!.TryRegister(
-            config.ToggleHotkey, ToggleOverlay, out var error);
+        var spec = config.ToggleHotkey;
+        string? error;
 
-        if (_toggleRegistration is not null)
+        // 文字の入力に使われる組み合わせを押さえると、その文字が打てなくなる。登録せずに知らせる。
+        if (HotkeyRules.TypesCharacter(spec))
         {
-            _toggleFailureNotified = null;
-            return;
+            error = UiText.HotkeyTypesCharacter(spec.ToString());
+        }
+        else
+        {
+            _toggleRegistration = _hotKeys!.TryRegister(spec, ToggleOverlay, out error);
+
+            if (_toggleRegistration is not null)
+            {
+                _toggleFailureNotified = null;
+                return;
+            }
         }
 
-        var spec = config.ToggleHotkey.ToString();
-        if (_toggleFailureNotified == spec) return;
-        _toggleFailureNotified = spec;
+        var text = spec.ToString();
+        if (_toggleFailureNotified == text) return;
+        _toggleFailureNotified = text;
 
         // ここが取れないとアプリを呼び出す手段がトレイだけになるので、必ず知らせる。
         _tray?.Notify(UiText.CannotRegisterHotkey, error ?? UiText.UnknownCause,
@@ -514,6 +738,13 @@ public partial class App : Application, ISettingsHost
         foreach (var layerId in _overlay!.LayerIds)
         {
             if (config.ManualLayerHotkey(layerId) is not { } spec) continue;
+
+            // 既定の組み合わせは ManualLayerHotkey の時点で除いてある。ここに来るのは利用者が選んだもの。
+            if (HotkeyRules.TypesCharacter(spec))
+            {
+                failures.Add($"L{layerId}: {UiText.HotkeyTypesCharacter(spec.ToString())}");
+                continue;
+            }
 
             var id = layerId;
             var registration = _hotKeys!.TryRegister(spec, () => _overlay!.ShowManualLayer(id), out var error);
@@ -552,7 +783,13 @@ public partial class App : Application, ISettingsHost
 
     string? ISettingsHost.LayoutPath => _loaded.LayoutPath;
 
-    bool ISettingsHost.TryApply(AppConfig config, out string? error) => TryApply(config, save: true, out error);
+    GitHubSource ISettingsHost.GitHub => _gitHub;
+
+    bool ISettingsHost.TryApply(AppConfig config, out string? error, bool reloadKeymap) =>
+        TryApply(config, save: true, reload: reloadKeymap, out error);
+
+    bool ISettingsHost.Reload(out string? error) =>
+        TryApply(_config.Clone(), save: false, reload: true, out error);
 
     bool ISettingsHost.RunAtLogin => StartupEntry.IsEnabled;
 
@@ -634,6 +871,26 @@ public partial class App : Application, ISettingsHost
         _toggleRegistration?.Dispose();
         _hotKeys?.Dispose();
         _tray?.Dispose();
+
+        _activateWait?.Unregister(null);
+        _activate?.Dispose();
+
+        if (_instance is not null)
+        {
+            if (_ownsInstance)
+            {
+                try
+                {
+                    _instance.ReleaseMutex();
+                }
+                catch (ApplicationException)
+                {
+                    // 別のスレッドで取ったことになっている場合。プロセスの終了で解放される。
+                }
+            }
+
+            _instance.Dispose();
+        }
 
         base.OnExit(e);
     }

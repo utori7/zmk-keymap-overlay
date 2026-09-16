@@ -44,6 +44,8 @@ public partial class OverlayWindow : Window
         Rebuild();
     }
 
+    public Keymap Keymap => _keymap;
+
     /// <summary>キーマップが定義する ZMK レイヤー番号の一覧。</summary>
     public IReadOnlyList<int> LayerIds =>
         _keymap.Layers.Select(l => l.Index).ToList();

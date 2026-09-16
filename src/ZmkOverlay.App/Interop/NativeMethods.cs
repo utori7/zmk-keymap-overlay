@@ -105,6 +105,50 @@ internal static class NativeMethods
     public static extern bool SetWindowPos(
         IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 
+    // ---- キーボード配列 ----
+
+    public const byte VK_SHIFT = 0x10;
+    public const byte VK_CONTROL = 0x11;
+    public const byte VK_MENU = 0x12;
+    public const byte VK_LSHIFT = 0xA0;
+    public const byte VK_LCONTROL = 0xA2;
+    public const byte VK_RMENU = 0xA5;
+
+    public const uint MAPVK_VK_TO_VSC = 0;
+
+    /// <summary>ToUnicodeEx がデッドキーの状態を書き換えないようにする（Windows 10 1607 以降）。</summary>
+    public const uint TOUNICODE_NO_STATE_CHANGE = 0x4;
+
+    /// <summary>GetKeyboardType(0) が返す、日本語キーボード（106/109 など）の種類。</summary>
+    public const int KEYBOARD_TYPE_JAPANESE = 7;
+
+    [DllImport("user32.dll")]
+    public static extern int GetKeyboardLayoutList(int nBuff, [Out] IntPtr[]? lpList);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetKeyboardLayout(uint idThread);
+
+    [DllImport("user32.dll")]
+    public static extern uint MapVirtualKeyEx(uint uCode, uint uMapType, IntPtr dwhkl);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern int ToUnicodeEx(
+        uint wVirtKey, uint wScanCode, byte[] lpKeyState,
+        [Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pwszBuff,
+        int cchBuff, uint wFlags, IntPtr dwhkl);
+
+    [DllImport("user32.dll")]
+    public static extern int GetKeyboardType(int nTypeFlag);
+
+    // ---- 前面化 ----
+
+    public const int ASFW_ANY = -1;
+
+    /// <summary>2 つ目に起動したプロセスから、1 つ目のプロセスへ前面に出る権利を渡す。</summary>
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool AllowSetForegroundWindow(int dwProcessId);
+
     // ---- アイコン ----
 
     /// <summary><c>Bitmap.GetHicon</c> で作ったハンドルは GC されないので、自分で解放する。</summary>

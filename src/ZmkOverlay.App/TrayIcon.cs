@@ -248,15 +248,26 @@ public sealed class TrayIcon : IDisposable
         _icon.ShowBalloonTip(5000, title, message, kind);
     }
 
+    private static readonly MethodInfo? ShowContextMenuMethod =
+        typeof(NotifyIcon).GetMethod("ShowContextMenu", BindingFlags.Instance | BindingFlags.NonPublic);
+
     /// <summary>
     /// NotifyIcon は左クリックでメニューを出す公開 API を持たないので、右クリック時と同じ
     /// 内部メソッドを呼ぶ。ContextMenuStrip.Show を自前で呼ぶと、トレイ用の前面化処理が抜けて
     /// メニューの外をクリックしても閉じなくなる。
+    ///
+    /// 内部メソッドは .NET の更新で名前が変わりうる。見つからなければ、閉じにくくても出ないよりはよいので自前で出す。
     /// </summary>
-    private void ShowMenu() =>
-        typeof(NotifyIcon)
-            .GetMethod("ShowContextMenu", BindingFlags.Instance | BindingFlags.NonPublic)
-            ?.Invoke(_icon, null);
+    private void ShowMenu()
+    {
+        if (ShowContextMenuMethod is not null)
+        {
+            ShowContextMenuMethod.Invoke(_icon, null);
+            return;
+        }
+
+        _icon.ContextMenuStrip?.Show(System.Windows.Forms.Cursor.Position);
+    }
 
     /// <summary>exe に埋め込んだアイコンを、トレイの大きさ（DPI で変わる）に合う面で読む。</summary>
     private static Icon LoadAppIcon()

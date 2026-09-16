@@ -33,8 +33,17 @@ internal interface ISettingsHost
     /// <summary>
     /// キーマップを読めたら保存して反映する。読めなければ何も変えず、理由を返す。
     /// 読めない設定を保存すると、次回起動できなくなるため。
+    ///
+    /// キーマップの読み込みに関わる値が変わっていなければ、ファイルは読み直さない（スライダーを動かすたびに
+    /// 大きなフォルダを探し直さないように）。ファイルの中身が変わったと分かっているときは <paramref name="reloadKeymap"/> を付ける。
     /// </summary>
-    bool TryApply(AppConfig config, out string? error);
+    bool TryApply(AppConfig config, out string? error, bool reloadKeymap = false);
+
+    /// <summary>設定は変えずに、キーマップのファイルを読み直す。</summary>
+    bool Reload(out string? error);
+
+    /// <summary>GitHub や ZMK 本体から取ってくるときに使う。アプリ全体で 1 つ。</summary>
+    ZmkOverlay.Core.Zmk.GitHubSource GitHub { get; }
 
     /// <summary>スタートアップフォルダの実体を見る。設定ファイルには持たない。</summary>
     bool RunAtLogin { get; }

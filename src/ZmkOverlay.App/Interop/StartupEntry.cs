@@ -32,22 +32,56 @@ internal static class StartupEntry
     /// </summary>
     public static void Enable(string? configPath)
     {
-        var exePath = Environment.ProcessPath
-                      ?? throw new InvalidOperationException(UiText.ExePathUnknown);
-
-        var shellType = Type.GetTypeFromProgID("WScript.Shell")
-                        ?? throw new InvalidOperationException(UiText.ScriptHostUnavailable);
-
-        dynamic shell = Activator.CreateInstance(shellType)
-                        ?? throw new InvalidOperationException(UiText.ScriptHostCreateFailed);
-
-        dynamic link = shell.CreateShortcut(ShortcutPath);
+        var exePath = CurrentExe();
+        dynamic link = OpenShortcut();
 
         link.TargetPath = exePath;
         link.Arguments = configPath is null ? "" : $"--config \"{configPath}\"";
         link.WorkingDirectory = Path.GetDirectoryName(exePath) ?? "";
         link.Description = UiText.ShortcutDescription;
         link.Save();
+    }
+
+    /// <summary>
+    /// 登録済みのショートカットが、もう無い exe を指していたら（フォルダごと移した、など）、いまの exe に向け直す。
+    /// 参照先がまだあるときは触らない。配布版と開発版を併用している人のショートカットを勝手に書き換えないため。
+    /// 失敗しても起動には関係ないので、黙って諦める。
+    /// </summary>
+    public static void RepairIfMoved()
+    {
+        try
+        {
+            if (!IsEnabled) return;
+
+            dynamic link = OpenShortcut();
+            string target = link.TargetPath;
+
+            if (string.IsNullOrWhiteSpace(target) || File.Exists(target)) return;
+
+            var exePath = CurrentExe();
+            link.TargetPath = exePath;
+            link.WorkingDirectory = Path.GetDirectoryName(exePath) ?? "";
+            link.Save();
+        }
+        catch (Exception)
+        {
+            // WScript.Shell が使えない環境など。自動起動が効かないだけで、いまの動作には影響しない。
+        }
+    }
+
+    private static string CurrentExe() =>
+        Environment.ProcessPath ?? throw new InvalidOperationException(UiText.ExePathUnknown);
+
+    /// <summary>ショートカットを開く（無ければ新しく作る準備をする）。保存は呼び出し側で。</summary>
+    private static dynamic OpenShortcut()
+    {
+        var shellType = Type.GetTypeFromProgID("WScript.Shell")
+                        ?? throw new InvalidOperationException(UiText.ScriptHostUnavailable);
+
+        dynamic shell = Activator.CreateInstance(shellType)
+                        ?? throw new InvalidOperationException(UiText.ScriptHostCreateFailed);
+
+        return shell.CreateShortcut(ShortcutPath);
     }
 
     public static void Disable()

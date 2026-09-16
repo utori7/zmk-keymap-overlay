@@ -18,8 +18,10 @@ var mode = args.Length > 0 ? args[0] : "--auto";
 var keyName = args.Length > 1 ? args[1] : "F13";
 
 // --tap は "ctrl+alt+K" のような組み合わせを取るので、
-// 単独キーとしての解釈より先に処理する。
+// 単独キーとしての解釈より先に処理する。--hold も "ctrl+F13" のように修飾キーを付けられる
+// （ホームロウモッドの Ctrl を押したままレイヤーに入った状況を作るため）。
 if (mode == "--tap") return RunTap(keyName);
+if (mode == "--hold" && keyName.Contains('+')) return RunHoldCombo(keyName, args.Length > 2 ? args[2] : "2000");
 
 if (!TryParseVk(keyName, out var vk))
 {
@@ -43,7 +45,7 @@ switch (mode)
     default:
         Console.Error.WriteLine(
             "使い方: HotkeyProbe [--auto|--manual|--suppress] [キー名]\n" +
-            "        HotkeyProbe --hold [キー名] [ミリ秒]\n" +
+            "        HotkeyProbe --hold [キー名 | ctrl+F13] [ミリ秒]\n" +
             "        HotkeyProbe --tap  ctrl+alt+K");
         return 1;
 }
@@ -167,7 +169,21 @@ int RunHold(int vk, string keyName, string durationText)
 /// "ctrl+alt+K" のような組み合わせを 1 回叩く。
 /// オーバーレイ側のホットキーを外から叩いて確かめるための道具。
 /// </summary>
-int RunTap(string combo)
+int RunTap(string combo) => PressCombo(combo, holdMs: 30, verb: "叩きました");
+
+/// <summary>修飾キーを押したまま、キーを <paramref name="durationText"/> ミリ秒押しっぱなしにする。</summary>
+int RunHoldCombo(string combo, string durationText)
+{
+    if (!int.TryParse(durationText, out var ms) || ms <= 0)
+    {
+        Console.Error.WriteLine($"時間 '{durationText}' を解釈できません。ミリ秒で指定してください。");
+        return 1;
+    }
+
+    return PressCombo(combo, holdMs: ms, verb: $"{ms} ms 押しました");
+}
+
+int PressCombo(string combo, int holdMs, string verb)
 {
     var modifiers = new List<int>();
     int? target = null;
@@ -201,13 +217,13 @@ int RunTap(string combo)
     Thread.Sleep(20);
 
     Win32.SendKey((ushort)target.Value, keyUp: false);
-    Thread.Sleep(30);
+    Thread.Sleep(holdMs);
     Win32.SendKey((ushort)target.Value, keyUp: true);
 
     Thread.Sleep(20);
     for (var i = modifiers.Count - 1; i >= 0; i--) Win32.SendKey((ushort)modifiers[i], keyUp: true);
 
-    Console.WriteLine($"{combo} を叩きました。");
+    Console.WriteLine($"{combo} を{verb}。");
     return 0;
 }
 

@@ -28,12 +28,15 @@ internal sealed class LayerSyncService : IDisposable
     private readonly List<IDisposable> _registrations = new();
 
     /// <summary>
-    /// 押されているとみなしている合図キー。後から押したものほど後ろにあり、表示するのは末尾のレイヤー。
+    /// 押されているとみなしている合図キー。重ねたレイヤー（L1 を押したまま L3 に入る、など）では複数になる。
     ///
     /// 1 つだけ覚える作りだと、L1 を押したまま L3 に入って L3 のキーを離したとき、
     /// L1 のキーはまだ押されているのにオーバーレイが消えてしまう。
     /// </summary>
     private readonly List<HeldSignal> _held = new();
+
+    /// <summary>いま表示しているレイヤー。何も押されていなければ null。</summary>
+    private int? _shown;
 
     private bool _disposed;
 
@@ -71,11 +74,10 @@ internal sealed class LayerSyncService : IDisposable
                 continue;
             }
 
-            // 修飾キーなしの単独キーとして予約する。これで他アプリにも届かなくなる。
-            var spec = new HotkeySpec { Key = signalKey };
+            // 単独のキーとして予約する。これで他アプリにも届かなくなる。
+            // 修飾キーを押したままレイヤーに入っても受け取れるよう、修飾つきでも押さえる。
             var id = layerId;
-
-            var registration = _hotKeys.TryRegister(spec, () => OnSignal(id, vk), out var error);
+            var registration = _hotKeys.TryRegisterAnyModifiers(signalKey, () => OnSignal(id, vk), out var error);
 
             if (registration is null) failures.Add($"L{layerId} ({signalKey}): {error}");
             else _registrations.Add(registration);
@@ -88,6 +90,7 @@ internal sealed class LayerSyncService : IDisposable
     {
         _timer.Stop();
         _held.Clear();
+        _shown = null;
 
         foreach (var registration in _registrations) registration.Dispose();
         _registrations.Clear();
@@ -107,7 +110,9 @@ internal sealed class LayerSyncService : IDisposable
         _held.RemoveAll(h => h.Vk == vk);
         _held.Add(new HeldSignal(layerId, vk));
 
-        _overlay.BeginTransient(layerId);
+        // 押された瞬間は、同じレイヤーでも表示し直す（無効から戻した直後など、隠れていることがある）。
+        _shown = ShownLayer();
+        _overlay.BeginTransient(_shown.Value);
         _timer.Start();
     }
 
@@ -119,7 +124,6 @@ internal sealed class LayerSyncService : IDisposable
             return;
         }
 
-        var shown = _held[^1];
         var anyReleased = false;
 
         foreach (var held in _held.ToList())
@@ -143,12 +147,35 @@ internal sealed class LayerSyncService : IDisposable
         if (_held.Count == 0)
         {
             _timer.Stop();
+            _shown = null;
             _overlay.EndTransient();
             return;
         }
 
         // 上に重ねたレイヤーを離しても、下のレイヤーのキーはまだ押されている。そちらの表示に戻す。
-        if (_held[^1] != shown) _overlay.BeginTransient(_held[^1].LayerId);
+        Show(ShownLayer());
+    }
+
+    private void Show(int layerId)
+    {
+        if (_shown == layerId) return;
+
+        _shown = layerId;
+        _overlay.BeginTransient(layerId);
+    }
+
+    /// <summary>
+    /// 表示するレイヤー。押されている合図キーのレイヤーに、その組み合わせで入る条件付きレイヤーを足し、
+    /// その中で番号が最も大きいもの。ZMK も番号の大きいレイヤーからキーを探すので、実際に効いている配置と一致する。
+    /// Lower と Raise を同時に押したときは、条件付きレイヤーの Adjust が出る。
+    /// </summary>
+    private int ShownLayer()
+    {
+        var keymap = _overlay.Keymap;
+        var active = keymap.WithConditionalLayers(_held.Select(h => h.LayerId));
+        var shown = active.Where(id => keymap.Layers.Any(l => l.Index == id)).ToList();
+
+        return shown.Count > 0 ? shown.Max() : _held[^1].LayerId;
     }
 
     public void Dispose()

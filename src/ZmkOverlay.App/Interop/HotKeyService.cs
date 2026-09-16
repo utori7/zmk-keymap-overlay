@@ -84,6 +84,47 @@ public sealed class HotKeyService : IDisposable
 
     private const uint MOD_NOREPEAT_BASE = NativeMethods.MOD_NOREPEAT;
 
+    private static readonly string[] AllModifiers = { "Ctrl", "Alt", "Shift", "Win" };
+
+    /// <summary>
+    /// 修飾キーの押し方によらず受け取れるように、同じキーを修飾キーの全組み合わせ（16 通り）で登録する。
+    ///
+    /// RegisterHotKey は修飾キーが完全に一致したときだけ反応する。合図キーを修飾なしでしか押さえていないと、
+    /// ホームロウモッドの Ctrl を押したままレイヤーに入ったとき（Ctrl+F13 になる）に表示されず、
+    /// しかも F13 が作業中のアプリに漏れる。
+    /// 修飾なしの登録だけは必須で、ほかは取れた分だけ使う（他のアプリが先に取っていることがある）。
+    /// </summary>
+    public IDisposable? TryRegisterAnyModifiers(string key, Action onPressed, out string? error)
+    {
+        var plain = TryRegister(new HotkeySpec { Key = key }, onPressed, out error);
+        if (plain is null) return null;
+
+        var registrations = new List<IDisposable> { plain };
+
+        for (var mask = 1; mask < 1 << AllModifiers.Length; mask++)
+        {
+            var modifiers = AllModifiers.Where((_, bit) => (mask & (1 << bit)) != 0).ToList();
+
+            if (TryRegister(new HotkeySpec { Modifiers = modifiers, Key = key }, onPressed, out _) is { } extra)
+                registrations.Add(extra);
+        }
+
+        return new Group(registrations);
+    }
+
+    private sealed class Group : IDisposable
+    {
+        private readonly List<IDisposable> _items;
+
+        public Group(List<IDisposable> items) => _items = items;
+
+        public void Dispose()
+        {
+            foreach (var item in _items) item.Dispose();
+            _items.Clear();
+        }
+    }
+
     private void Unregister(int id)
     {
         if (_handlers.Remove(id))

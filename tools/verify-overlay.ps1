@@ -8,7 +8,9 @@
 # ASCII only on purpose. PowerShell 5.1 reads a BOM-less .ps1 as ANSI, which
 # mangles non-ASCII literals and silently corrupts the config this writes.
 #
-#   powershell -File tools\verify-overlay.ps1
+#   powershell -File tools\verify-overlay.ps1 [-Configuration Debug|Release]
+#
+# Any running ZmkOverlay is stopped first: only one instance can run per session.
 #
 # Two traps worth knowing before extending this script:
 #
@@ -21,6 +23,11 @@
 #   * A locked workstation breaks everything silently: synthesised keys still
 #     land, but WM_HOTKEY is never delivered, so every check fails for the
 #     wrong reason. Guarded below.
+
+param(
+    [ValidateSet('Debug', 'Release')]
+    [string]$Configuration = 'Debug'
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -66,11 +73,12 @@ if (Get-Process LogonUI -ErrorAction SilentlyContinue) {
 }
 
 $root  = Split-Path $PSScriptRoot -Parent
-$app   = Join-Path $root 'src\ZmkOverlay.App\bin\Debug\net10.0-windows\ZmkOverlay.exe'
-$probe = Join-Path $root 'tools\HotkeyProbe\bin\Debug\net10.0-windows\HotkeyProbe.exe'
+$app   = Join-Path $root "src\ZmkOverlay.App\bin\$Configuration\net10.0-windows\ZmkOverlay.exe"
+$probe = Join-Path $root "tools\HotkeyProbe\bin\$Configuration\net10.0-windows\HotkeyProbe.exe"
 $fx    = Join-Path $root 'tests\fixtures\zmk-config\config'
 $cfg   = Join-Path $env:TEMP 'zmk-overlay-verify.json'
 $title = 'ZMK Keymap Overlay'
+$settingsTitle = 'ZMK Keymap Overlay - Settings'.Replace('-', [string][char]0x2014)
 
 foreach ($required in @($app, $probe)) {
     if (-not (Test-Path $required)) { Write-Error "not built: $required"; exit 2 }
@@ -80,11 +88,13 @@ $script:pass = 0
 $script:fail = 0
 
 function Write-Config([string]$displayMode) {
-    $km = ($fx + '\Pyuron.keymap')                     -replace '\\','/'
-    $pl = ($fx + '\boards\shields\Pyuron\Pyuron.dtsi') -replace '\\','/'
+    $km = ($fx + '\demo40.keymap')                     -replace '\\','/'
+    $pl = ($fx + '\boards\shields\demo40\demo40.dtsi') -replace '\\','/'
 @"
 {
   "keyUnitPx": 44,
+  "language": "en",
+  "keyboardLayout": "us",
   "displayMode": "$displayMode",
   "zmk": {
     "keymapFile": "$km",
@@ -107,8 +117,8 @@ function Check([string]$label, [bool]$expected) {
     "    {0,-32} visible={1,-5} expected={2,-5} {3}" -f $label, $actual, $expected, $mark
 }
 
-function CheckHolding([string]$label, [bool]$expected) {
-    Start-Process $probe -ArgumentList '--hold','F13','2500' -WindowStyle Hidden
+function CheckHolding([string]$label, [bool]$expected, [string]$key = 'F13') {
+    Start-Process $probe -ArgumentList '--hold',$key,'2500' -WindowStyle Hidden
     Start-Sleep -Milliseconds 1100
     $r = Check $label $expected
     Start-Sleep -Seconds 2
@@ -118,10 +128,12 @@ function CheckHolding([string]$label, [bool]$expected) {
 # MOD_ALT | MOD_CONTROL | MOD_NOREPEAT
 $script:CtrlAlt  = 1 -bor 2 -bor 0x4000
 $script:NoRepeat = 0x4000
+$script:Ctrl     = 2 -bor 0x4000
 
 function AssertHotkeys([string]$where) {
     $missing = @()
     if (-not [Ov]::HeldBySomeoneElse($script:NoRepeat, 0x7C)) { $missing += 'F13' }
+    if (-not [Ov]::HeldBySomeoneElse($script:Ctrl,     0x7C)) { $missing += 'Ctrl+F13' }
     if (-not [Ov]::HeldBySomeoneElse($script:CtrlAlt,  0x4B)) { $missing += 'Ctrl+Alt+K' }
     if (-not [Ov]::HeldBySomeoneElse($script:CtrlAlt,  0x31)) { $missing += 'Ctrl+Alt+1' }
 
@@ -216,10 +228,46 @@ function Test-StackedLayers {
     ''
 }
 
+function Test-ModifierHeld {
+    # With a home-row mod, Ctrl can already be down when the layer key sends
+    # F13. The app must still follow, and the signal must not leak as Ctrl+F13.
+    $p = StartApp 'layersOnly'
+
+    '  [layersOnly] modifier held while entering a layer'
+    CheckHolding 'holding Ctrl+F13'  $true 'ctrl+F13'
+    Check        'after release'     $false
+
+    StopApp $p
+    ''
+}
+
+function Test-SecondInstance {
+    # Opening the exe again must not start a second tray app (it could not get
+    # any hotkeys). It asks the running one to show its settings instead.
+    $p = StartApp 'layersOnly'
+
+    '  [layersOnly] second instance'
+    Start-Process $app -ArgumentList '--config', $cfg | Out-Null
+    Start-Sleep -Seconds 3
+
+    $count = (Get-Process ZmkOverlay -ErrorAction SilentlyContinue | Measure-Object).Count
+    if ($count -eq 1) { $script:pass++; $mark = 'PASS' } else { $script:fail++; $mark = 'FAIL' }
+    "    {0,-32} processes={1,-3} expected=1     {2}" -f 'one process only', $count, $mark
+
+    $shown = [Ov]::Visible($settingsTitle)
+    if ($shown) { $script:pass++; $mark = 'PASS' } else { $script:fail++; $mark = 'FAIL' }
+    "    {0,-32} visible={1,-5} expected=True  {2}" -f 'settings window opened', $shown, $mark
+
+    StopApp $p
+    ''
+}
+
 Test-Mode 'layersOnly'
 Test-Mode 'always'
 Test-ManualLayer
 Test-StackedLayers
+Test-ModifierHeld
+Test-SecondInstance
 
 Remove-Item $cfg -ErrorAction SilentlyContinue
 

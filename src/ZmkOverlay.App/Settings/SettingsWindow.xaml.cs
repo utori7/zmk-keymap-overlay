@@ -13,6 +13,7 @@ using ZmkOverlay.Core.Zmk;
 using ZmkOverlay.App.Render;
 using ZmkOverlay.App.Text;
 using ZmkOverlay.Core.Config;
+using ZmkOverlay.Core.Model;
 using ZmkOverlay.Core.Text;
 
 namespace ZmkOverlay.App.Settings;
@@ -59,7 +60,7 @@ public partial class SettingsWindow : Window
     /// <summary>レイヤーごとのショートカット入力欄。Tag にレイヤー番号を持つ。</summary>
     private readonly List<TextBox> _layerShortcutBoxes = new();
 
-    private readonly GitHubSource _gitHub = new();
+    private GitHubSource _gitHub => _host.GitHub;
 
     /// <summary>「取得」で一覧を得たリポジトリ。キーマップが複数あって選んでもらうあいだ覚えておく。</summary>
     private GitHubLocation? _gitHubLocation;
@@ -192,6 +193,14 @@ public partial class SettingsWindow : Window
             LayoutPath.ToolTip = LayoutPath.Text;
             LayoutBrowse.IsEnabled = fromZmk;
             LayoutAuto.IsEnabled = fromZmk && hasLayoutFile;
+
+            // 自分の zmk-config にキーの並びがあるなら、ZMK 本体から取る必要はない。
+            ZmkLayoutPanel.Visibility = fromZmk && _host.LayoutSource is not (LayoutSource.FoundNearby or LayoutSource.Keymap)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+
+            if (string.IsNullOrWhiteSpace(ZmkShieldBox.Text))
+                ZmkShieldBox.Text = ZmkShieldSync.SuggestShield(config, _host.ConfigPath) ?? "";
 
             var us = config.KeyboardLayout.Equals("us", StringComparison.OrdinalIgnoreCase);
             HostJis.IsChecked = !us;
@@ -476,6 +485,10 @@ public partial class SettingsWindow : Window
             LayoutBrowse.Content = UiText.Browse;
             LayoutAuto.Content = UiText.UseKeymapLayout;
             ReloadButton.Content = UiText.ReloadKeymap;
+            ZmkLayoutSection.Text = UiText.SectionZmkLayout;
+            ZmkLayoutNote.Text = UiText.ZmkLayoutNote;
+            ZmkShieldLabel.Text = UiText.ZmkShieldLabel;
+            ZmkFetch.Content = UiText.ZmkFetch;
             HostLayoutSection.Text = UiText.SectionHostLayout;
             HostJis.Content = UiText.HostJis;
             HostUs.Content = UiText.HostUs;
@@ -614,8 +627,8 @@ public partial class SettingsWindow : Window
         await RunGitHubAsync(async () =>
         {
             var next = _host.Config.Clone();
-            await GitHubSync.RefreshAsync(next, _host.ConfigPath, _gitHub);
-            ShowError(_host.TryApply(next, out var error) ? null : error);
+            var notice = await GitHubSync.RefreshAsync(next, _host.ConfigPath, _gitHub);
+            ShowError(_host.TryApply(next, out var error, reloadKeymap: true) ? notice : error);
         });
     }
 
@@ -624,16 +637,18 @@ public partial class SettingsWindow : Window
         if (_gitHubLocation is null || _gitHubTree is null) return;
 
         var next = _host.Config.Clone();
-        await GitHubSync.UseAsync(next, _host.ConfigPath, _gitHub, _gitHubLocation, _gitHubTree, keymapPath);
+        var notice = await GitHubSync.UseAsync(next, _host.ConfigPath, _gitHub, _gitHubLocation, _gitHubTree, keymapPath);
 
         GitHubChoice.Visibility = Visibility.Collapsed;
-        ShowError(_host.TryApply(next, out var error) ? null : error);
+
+        // キーマップは使えるが、キーの並びを ZMK 本体から取れなかったときは、その理由を残しておく。
+        ShowError(_host.TryApply(next, out var error, reloadKeymap: true) ? notice : error);
     }
 
     /// <summary>通信中はボタンを押せなくし、失敗したら理由を出す。</summary>
     private async Task RunGitHubAsync(Func<Task> work)
     {
-        GitHubFetch.IsEnabled = GitHubUse.IsEnabled = GitHubRefresh.IsEnabled = false;
+        GitHubFetch.IsEnabled = GitHubUse.IsEnabled = GitHubRefresh.IsEnabled = ZmkFetch.IsEnabled = false;
         GitHubStatus.Text = UiText.GitHubFetching;
         ShowError(null);
 
@@ -647,7 +662,7 @@ public partial class SettingsWindow : Window
         }
         finally
         {
-            GitHubFetch.IsEnabled = GitHubUse.IsEnabled = GitHubRefresh.IsEnabled = true;
+            GitHubFetch.IsEnabled = GitHubUse.IsEnabled = GitHubRefresh.IsEnabled = ZmkFetch.IsEnabled = true;
 
             // 反映が済んでいればそちらが表示を入れ直す。済んでいなければ「取得しています」を消す。
             if (GitHubStatus.Text == UiText.GitHubFetching)
@@ -660,10 +675,37 @@ public partial class SettingsWindow : Window
 
     // ---- キーボード ----
 
-    private void OnBrowseKeymap(object sender, RoutedEventArgs e)
+    private async void OnBrowseKeymap(object sender, RoutedEventArgs e)
     {
-        SourceActions.UseLocalKeymap(this, _host, out var error);
+        var (_, error) = await SourceActions.UseLocalKeymapAsync(this, _host);
         ShowError(error);
+    }
+
+    /// <summary>ZMK 本体からキーの並びを取る。通信するのはこのボタンを押したときだけ。</summary>
+    private async void OnZmkFetch(object sender, RoutedEventArgs e)
+    {
+        var shield = ZmkShieldBox.Text;
+
+        GitHubFetch.IsEnabled = GitHubUse.IsEnabled = GitHubRefresh.IsEnabled = ZmkFetch.IsEnabled = false;
+        ZmkStatus.Text = UiText.ZmkFetching;
+        ShowError(null);
+
+        try
+        {
+            var problem = await SourceActions.FetchZmkLayoutAsync(_host, shield);
+
+            ZmkStatus.Text = problem is null ? UiText.ZmkFetched(_host.Config.Zmk.Shield) : "";
+            ShowError(problem);
+        }
+        catch (Exception ex) when (ex is GitHubSourceException or IOException or UnauthorizedAccessException)
+        {
+            ZmkStatus.Text = "";
+            ShowError(ex.Message);
+        }
+        finally
+        {
+            GitHubFetch.IsEnabled = GitHubUse.IsEnabled = GitHubRefresh.IsEnabled = ZmkFetch.IsEnabled = true;
+        }
     }
 
     private void OnBrowseLayout(object sender, RoutedEventArgs e)
@@ -678,7 +720,8 @@ public partial class SettingsWindow : Window
         Apply(config => config.Zmk.PhysicalLayoutFile = null);
 
     /// <summary>設定は変えずに、キーマップのファイルを読み直す。</summary>
-    private void OnReload(object sender, RoutedEventArgs e) => Apply(_ => { });
+    private void OnReload(object sender, RoutedEventArgs e) =>
+        ShowError(_host.Reload(out var error) ? null : error);
 
     private void OnHostLayoutChecked(object sender, RoutedEventArgs e)
     {
@@ -838,6 +881,13 @@ public partial class SettingsWindow : Window
 
         var spec = new HotkeySpec { Modifiers = modifiers, Key = name };
 
+        // Shift+英字や、AltGr で記号を打つ配列での Ctrl+Alt+数字 など。押さえるとその文字が打てなくなる。
+        if (HotkeyRules.TypesCharacter(spec))
+        {
+            box.Text = UiText.ShortcutTypesCharacter(spec.ToString());
+            return;
+        }
+
         // 同じ組み合わせを 2 か所に登録すると、後から登録したほうが黙って効かなくなる。
         // 入力欄に留まったまま理由を見せ、別の組み合わせを押してもらう。
         if (FindConflict(spec, layerTarget) is { } conflict)
@@ -870,9 +920,10 @@ public partial class SettingsWindow : Window
                 && spec.SameAs(other))
                 return UiText.ShortcutConflict(spec.ToString(), UiText.LayerShortcutUse(layer.Index));
 
+            // 合図キーは修飾キーの組み合わせすべてで押さえているので、修飾つきでも使えない。
             if (config.LayerSync.Enabled
                 && layer.SignalKey is { } signal
-                && spec.SameAs(new HotkeySpec { Key = signal }))
+                && string.Equals(spec.Key.Trim(), signal.Trim(), StringComparison.OrdinalIgnoreCase))
                 return UiText.ShortcutConflict(spec.ToString(), UiText.SignalKeyUse(layer.Index));
         }
 

@@ -150,17 +150,25 @@ internal static class KeymapRenderer
             VerticalAlignment = VerticalAlignment.Center,
         };
 
+        var autoShown = keymap.AutoShownLayerIds();
+
         for (var i = 0; i < keymap.Layers.Count; i++)
-            tabs.Children.Add(BuildTab(config, keymap.Layers[i], active: i == slot, isBase: i == 0, m));
+        {
+            var layer = keymap.Layers[i];
+
+            // 合図キーを持たず、合図キーの組み合わせ（条件付きレイヤー）でも入らないレイヤーは、
+            // キーボードを操作しても自動では出てこない。ベースレイヤーは合図が無くて当然なので対象外。
+            var followable = i == 0 || !config.LayerSync.Enabled || autoShown.Contains(layer.Index);
+
+            tabs.Children.Add(BuildTab(layer, active: i == slot, followable, m));
+        }
 
         return tabs;
     }
 
-    private static UIElement BuildTab(AppConfig config, Layer layer, bool active, bool isBase, Metrics m)
+    /// <summary>自動で出てこないレイヤーは、手で選ぶしかないことを淡い文字と点線の枠で示す。</summary>
+    private static UIElement BuildTab(Layer layer, bool active, bool followable, Metrics m)
     {
-        // 合図キーを持たないレイヤーは、キーボードを操作しても自動では出てこない。
-        // 手で選ぶしかないことを、淡い文字と点線の枠で示す。ベースレイヤーは合図キーが無くて当然なので対象外。
-        var followable = isBase || !config.LayerSync.Enabled || layer.SignalKey is not null;
 
         var cell = new Grid { Margin = new Thickness(0, 0, m.Unit * 0.05, m.Unit * 0.04) };
 
@@ -204,12 +212,20 @@ internal static class KeymapRenderer
     /// </summary>
     private static TextBlock BuildHint(AppConfig config, Keymap keymap, Metrics m)
     {
-        var parts = new List<string> { UiText.HintToggle(config.ToggleHotkey.ToString()) };
+        var parts = new List<string>();
+
+        // 文字の入力に使われる組み合わせは登録しないので、案内もしない。
+        if (!HotkeyRules.TypesCharacter(config.ToggleHotkey))
+            parts.Add(UiText.HintToggle(config.ToggleHotkey.ToString()));
 
         // 既定の Ctrl+Alt+数字 のときだけ、範囲でまとめて短く書ける。利用者が割り当てを変えていたら
         // 並べると長くなりすぎるので出さない（割り当てはトレイのメニューと設定画面で見られる）。
+        // この PC の配列で文字の入力に使われて登録していない番号があるときも、範囲では書けないので出さない。
         var numbered = keymap.Layers.Select(l => l.Index).Where(i => i is >= 0 and <= 9).ToList();
-        if (config.EnableManualLayerKeys && config.LayerHotkeys.Count == 0 && numbered.Count > 0)
+        if (config.EnableManualLayerKeys
+            && config.LayerHotkeys.Count == 0
+            && numbered.Count > 0
+            && numbered.All(i => config.ManualLayerHotkey(i) is not null))
         {
             var range = numbered.Count == 1
                 ? numbered[0].ToString(CultureInfo.InvariantCulture)
@@ -255,8 +271,7 @@ internal static class KeymapRenderer
             Canvas.SetLeft(element, phys.X * scale);
             Canvas.SetTop(element, phys.Y * scale);
 
-            // ZMK は 1/100 度で回転を持つ。Pyuron は未使用だが、
-            // 回転列を持つ分割キーボードのために対応しておく。
+            // ZMK は 1/100 度で回転を持つ。同梱サンプルの Corne も親指のキーが回転している。
             if (phys.R != 0)
             {
                 element.RenderTransformOrigin = new Point(0, 0);

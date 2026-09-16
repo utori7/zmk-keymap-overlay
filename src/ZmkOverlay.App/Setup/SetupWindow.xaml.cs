@@ -11,6 +11,7 @@ using ZmkOverlay.App.Settings;
 using ZmkOverlay.App.Text;
 using ZmkOverlay.Core.Config;
 using ZmkOverlay.Core.Dts;
+using ZmkOverlay.Core.Model;
 using ZmkOverlay.Core.Text;
 using ZmkOverlay.Core.Zmk;
 
@@ -39,7 +40,7 @@ public partial class SetupWindow : Window
 
     private readonly ISettingsHost _host;
     private readonly FrameworkElement[] _pages;
-    private readonly GitHubSource _gitHub = new();
+    private GitHubSource _gitHub => _host.GitHub;
 
     private GitHubLocation? _gitHubLocation;
     private GitHubTree? _gitHubTree;
@@ -93,6 +94,12 @@ public partial class SetupWindow : Window
         ShowError(null);
         RefreshStep();
     }
+
+    /// <summary>
+    /// いまのステップの下に知らせを出す（キーマップを読めずにサンプルで起動した、など）。
+    /// ステップを移ると消える。
+    /// </summary>
+    public void ShowNotice(string message) => ShowError(message);
 
     // ---- 共通 ----
 
@@ -202,7 +209,7 @@ public partial class SetupWindow : Window
             return;
         }
 
-        await RunBusyAsync(SourceStatus, async () =>
+        await RunBusyAsync(SourceStatus, UiText.GitHubFetching, async () =>
         {
             var tree = await _gitHub.ListAsync(location);
             var candidates = tree.KeymapPaths;
@@ -237,7 +244,7 @@ public partial class SetupWindow : Window
     {
         if (GitHubKeymapBox.SelectedItem is not string path) return;
 
-        await RunBusyAsync(SourceStatus, () => UseGitHubKeymapAsync(path));
+        await RunBusyAsync(SourceStatus, UiText.GitHubFetching, () => UseGitHubKeymapAsync(path));
     }
 
     private async Task UseGitHubKeymapAsync(string keymapPath)
@@ -245,17 +252,27 @@ public partial class SetupWindow : Window
         if (_gitHubLocation is null || _gitHubTree is null) return;
 
         var next = _host.Config.Clone();
-        await GitHubSync.UseAsync(next, _host.ConfigPath, _gitHub, _gitHubLocation, _gitHubTree, keymapPath);
+        var notice = await GitHubSync.UseAsync(next, _host.ConfigPath, _gitHub, _gitHubLocation, _gitHubTree, keymapPath);
 
         GitHubChoice.Visibility = Visibility.Collapsed;
 
-        if (_host.TryApply(next, out var error)) ShowStep(SetupStep.Shape);
-        else ShowError(error);
+        if (!_host.TryApply(next, out var error, reloadKeymap: true))
+        {
+            ShowError(error);
+            return;
+        }
+
+        ShowStep(SetupStep.Shape);
+
+        // キーマップは使えるが、キーの並びを ZMK 本体から取れなかった。推定で表示していることを伝える。
+        if (notice is not null) ShowNotice(notice);
     }
 
-    private void OnLocalBrowse(object sender, RoutedEventArgs e)
+    private async void OnLocalBrowse(object sender, RoutedEventArgs e)
     {
-        if (SourceActions.UseLocalKeymap(this, _host, out var error)) ShowStep(SetupStep.Shape);
+        var (applied, error) = await SourceActions.UseLocalKeymapAsync(this, _host);
+
+        if (applied) ShowStep(SetupStep.Shape);
         else ShowError(error);
     }
 
@@ -284,9 +301,30 @@ public partial class SetupWindow : Window
         ShapeBrowse.IsEnabled = fromZmk;
         ShapeAuto.IsEnabled = fromZmk && !string.IsNullOrWhiteSpace(config.Zmk.PhysicalLayoutFile);
 
+        // 自分の zmk-config にキーの並びがあるなら、ZMK 本体から取る必要はない。
+        ShapeZmkCard.Visibility = fromZmk && _host.LayoutSource is not (LayoutSource.FoundNearby or LayoutSource.Keymap)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        if (string.IsNullOrWhiteSpace(ShapeShield.Text))
+            ShapeShield.Text = ZmkShieldSync.SuggestShield(config, _host.ConfigPath) ?? "";
+
         var us = config.KeyboardLayout.Equals("us", StringComparison.OrdinalIgnoreCase);
         ShapeJis.IsChecked = !us;
         ShapeUs.IsChecked = us;
+    }
+
+    private async void OnShapeZmkFetch(object sender, RoutedEventArgs e)
+    {
+        var shield = ShapeShield.Text;
+
+        await RunBusyAsync(ShapeZmkStatus, UiText.ZmkFetching, async () =>
+        {
+            var problem = await SourceActions.FetchZmkLayoutAsync(_host, shield);
+
+            if (problem is null) ShapeZmkStatus.Text = UiText.ZmkFetched(_host.Config.Zmk.Shield);
+            else ShowError(problem);
+        });
     }
 
     private void OnShapeBrowse(object sender, RoutedEventArgs e)
@@ -336,9 +374,12 @@ public partial class SetupWindow : Window
             return;
         }
 
-        var needed = _patch.Added.Count > 0;
+        // 書き換えが必要かは、書き換えた結果が今のファイルと違うかで決める。
+        // 前にこのアプリで書き換えたキーマップは、もう合図キーを持っているので「準備できています」になる。
+        var needed = _patch.Changed;
 
-        FirmwareLead.Text = needed ? UiText.FirmwareLeadNeeded
+        FirmwareLead.Text = needed && _patch.Added.Count > 0 ? UiText.FirmwareLeadNeeded
+                          : needed ? UiText.FirmwareLeadUpdate
                           : _patch.AlreadySignaled.Count > 0 ? UiText.FirmwareLeadReady
                           : UiText.FirmwareLeadNothing;
 
@@ -357,6 +398,7 @@ public partial class SetupWindow : Window
 
         if (_patch.AlreadySignaled.TryGetValue(layer, out var existing)) return UiText.FirmwareHasSignal(existing);
         if (_patch.Added.FirstOrDefault(a => a.Layer == layer) is { } added) return UiText.FirmwareWillAdd(added.SignalKey);
+        if (_patch.Conditional.TryGetValue(layer, out var ifLayers)) return UiText.FirmwareConditional(ifLayers);
         if (_patch.Skipped.FirstOrDefault(s => s.Layer == layer) is { } skipped) return UiText.SkipReasonText(skipped);
 
         return "";
@@ -368,19 +410,19 @@ public partial class SetupWindow : Window
     /// </summary>
     private async void OnCopyAndOpen(object sender, RoutedEventArgs e)
     {
-        await RunBusyAsync(FirmwareStatus, async () =>
+        await RunBusyAsync(FirmwareStatus, UiText.GitHubFetching, async () =>
         {
             var next = _host.Config.Clone();
             await GitHubSync.RefreshAsync(next, _host.ConfigPath, _gitHub);
 
-            if (!_host.TryApply(next, out var error))
+            if (!_host.TryApply(next, out var error, reloadKeymap: true))
             {
                 ShowError(error);
                 return;
             }
 
             RefreshFirmware();
-            if (_patch is not { Added.Count: > 0 }) return;   // 取り直したら、もう入っていた
+            if (_patch is not { Changed: true }) return;   // 取り直したら、もう入っていた
 
             try
             {
@@ -402,11 +444,13 @@ public partial class SetupWindow : Window
 
     private async void OnRecheckGitHub(object sender, RoutedEventArgs e)
     {
-        await RunBusyAsync(FirmwareStatus, async () =>
+        await RunBusyAsync(FirmwareStatus, UiText.GitHubFetching, async () =>
         {
             var next = _host.Config.Clone();
-            await GitHubSync.RefreshAsync(next, _host.ConfigPath, _gitHub);
-            if (!_host.TryApply(next, out var error)) ShowError(error);
+            var notice = await GitHubSync.RefreshAsync(next, _host.ConfigPath, _gitHub);
+
+            if (!_host.TryApply(next, out var error, reloadKeymap: true)) ShowError(error);
+            else if (notice is not null) ShowNotice(notice);
         });
     }
 
@@ -445,7 +489,7 @@ public partial class SetupWindow : Window
         }
 
         // 書き換えたキーマップを読み直す。合図キーが見つかるので、表示が「準備できています」に変わる。
-        Apply(_ => { });
+        if (!_host.Reload(out var reloadError)) ShowError(reloadError);
     }
 
     private void OnSaveAs(object sender, RoutedEventArgs e)
@@ -602,12 +646,12 @@ public partial class SetupWindow : Window
     }
 
     /// <summary>通信中はボタンを押せなくし、失敗したら理由を出す。</summary>
-    private async Task RunBusyAsync(TextBlock status, Func<Task> work)
+    private async Task RunBusyAsync(TextBlock status, string busyText, Func<Task> work)
     {
-        var buttons = new[] { GitHubFetch, GitHubUse, CopyAndOpen, RecheckGitHub, NextButton, BackButton };
+        var buttons = new[] { GitHubFetch, GitHubUse, CopyAndOpen, RecheckGitHub, ShapeZmkFetch, NextButton, BackButton };
         foreach (var button in buttons) button.IsEnabled = false;
 
-        status.Text = UiText.GitHubFetching;
+        status.Text = busyText;
         ShowError(null);
 
         try
@@ -621,7 +665,7 @@ public partial class SetupWindow : Window
         finally
         {
             foreach (var button in buttons) button.IsEnabled = true;
-            if (status.Text == UiText.GitHubFetching) status.Text = "";
+            if (status.Text == busyText) status.Text = "";
         }
     }
 
@@ -675,6 +719,10 @@ public partial class SetupWindow : Window
             ShapeJis.Content = UiText.HostJis;
             ShapeUs.Content = UiText.HostUs;
             ShapeHostNote.Text = UiText.HostLayoutNote;
+            ShapeZmkTitle.Text = UiText.SectionZmkLayout;
+            ShapeZmkNote.Text = UiText.ZmkLayoutNote;
+            ShapeShieldLabel.Text = UiText.ZmkShieldLabel;
+            ShapeZmkFetch.Content = UiText.ZmkFetch;
 
             FirmwareTitle.Text = UiText.FirmwareTitle;
             FirmwareBackup.Text = UiText.FirmwareBackup;

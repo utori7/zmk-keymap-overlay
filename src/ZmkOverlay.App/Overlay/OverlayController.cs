@@ -54,6 +54,9 @@ internal sealed class OverlayController
 
     public IReadOnlyList<(int LayerId, string SignalKey)> SignalKeys => _window.SignalKeys;
 
+    /// <summary>表示中のキーマップ。条件付きレイヤーの判定に使う。</summary>
+    public Keymap Keymap => _window.Keymap;
+
     public bool IsVisible => _window.IsVisible;
 
     public bool IsEnabled => _enabled;

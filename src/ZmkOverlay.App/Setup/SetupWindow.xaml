@@ -138,6 +138,21 @@
                         <Button x:Name="ShapeAuto" Click="OnShapeAuto" />
                     </StackPanel>
 
+                    <!-- Corne など、キーの並びが ZMK 本体にあるキーボード向け。通信はボタンを押したときだけ。 -->
+                    <Border x:Name="ShapeZmkCard" Style="{StaticResource Card}" Margin="0,16,0,0">
+                        <StackPanel>
+                            <TextBlock x:Name="ShapeZmkTitle" Style="{StaticResource CardTitle}" />
+                            <TextBlock x:Name="ShapeZmkNote" Style="{StaticResource Note}" />
+                            <DockPanel>
+                                <TextBlock x:Name="ShapeShieldLabel" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                <Button x:Name="ShapeZmkFetch" DockPanel.Dock="Right" MinWidth="120" Margin="8,0,0,0"
+                                        Click="OnShapeZmkFetch" />
+                                <TextBox x:Name="ShapeShield" VerticalContentAlignment="Center" />
+                            </DockPanel>
+                            <TextBlock x:Name="ShapeZmkStatus" TextWrapping="Wrap" Margin="0,6,0,0" Opacity="0.85" />
+                        </StackPanel>
+                    </Border>
+
                     <TextBlock x:Name="ShapeHostTitle" Style="{StaticResource CardTitle}" Margin="0,20,0,6" />
                     <StackPanel Orientation="Horizontal">
                         <RadioButton x:Name="ShapeJis" GroupName="SetupHostLayout" Margin="0,0,24,0" Checked="OnHostLayoutChecked" />
