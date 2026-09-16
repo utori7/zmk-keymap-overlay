@@ -11,7 +11,10 @@ While you hold a layer key, that layer's keys appear.
 
 - Shows a layer only while its layer key is held (or keep it on screen all the time)
 - Reads your zmk-config directly — just paste the GitHub URL, or pick a `.keymap` file on your PC
-- Finds the key positions (physical layout) automatically
+- Works out where the keys are (the physical layout)
+  - uses the one in your zmk-config if there is one
+  - for keyboards defined in ZMK itself, such as Corne, Lily58 and Sofle, downloads it from ZMK
+  - otherwise guesses it from how the keymap is written (and tells you it guessed)
 - Prepares an updated keymap so your keyboard can tell the PC which layer is active
 - Shows any layer with a shortcut too (you can choose the combinations)
 - English / Japanese, light / dark
@@ -32,13 +35,15 @@ While you hold a layer key, that layer's keys appear.
 4. The setup guide opens. Follow it step by step
 
 You don't need to install .NET; it is included.
+Opening `ZmkOverlay.exe` again while it is running opens Settings instead of starting a second copy.
 
 ![Setup: where is your keymap?](docs/images/setup-source-en.png)
 
 ## Setup guide
 
 1. **Where is your keymap?** — a GitHub URL, a `.keymap` file on this PC, or a sample
-2. **Does this look like your keyboard?** — check the preview; if the keys are misplaced, choose your shield's `.dtsi`
+2. **Does this look like your keyboard?** — check the preview; if the keys are misplaced, press **Get from ZMK**,
+   or choose a `.dtsi` file that describes the key positions
 3. **Let your keyboard send layer signals** — see below
 4. **Try it out**
 5. **Done**
@@ -53,6 +58,7 @@ The app listens for these keys to switch the overlay, and reserves them so no ot
 
 - The app prepares the updated keymap for you. On GitHub, you just copy it into the editor and commit
 - Typing feel stays the same (it uses the same settings as ZMK's built-in `&lt`)
+- Conditional layers, such as an Adjust layer entered by holding Lower and Raise together, are shown too
 - **Save your current firmware first**, so you can go back if needed
 - Without the change, you can still show layers with shortcuts or from the tray menu
 
@@ -60,18 +66,31 @@ The app listens for these keys to switch the overlay, and reserves them so no ot
 
 ## Using it
 
-- **Left-click the tray icon** (bottom right of the screen) for the menu
+- **Left-click the tray icon** (bottom right of the screen) for the menu.
+  If you can't see it, it is under **^** on the taskbar
 - **Ctrl+Alt+K** turns the overlay on and off
 - **Ctrl+Alt+number** shows a layer (you can change these in Settings)
 - **Settings** (tray → Settings…): size, position, opacity, when to show, signal keys, shortcuts,
   language, start when signing in
 
+On layouts that type symbols with AltGr (which Windows treats as Ctrl+Alt), such as German, holding a Ctrl+Alt
+combination as a shortcut would stop you typing those symbols. The app never takes a combination that types a
+character: the on/off shortcut becomes Ctrl+Alt+Shift+K or similar, and Ctrl+Alt+number is left unassigned.
+You can pick other combinations in Settings.
+
 ![Settings](docs/images/settings-display-en.png)
 
 ## Network use
 
-The app contacts GitHub (`api.github.com` and `raw.githubusercontent.com`) only when you press
-**Fetch** or **Fetch again**, or **Reload keymap** in the tray while your keymap comes from GitHub.
+The app downloads files from GitHub (`api.github.com` and `raw.githubusercontent.com`) only when you:
+
+- press **Fetch** or **Fetch again** in Settings or the setup guide
+- press **Copy and open GitHub's editor** or **Fetch again and check** in the setup guide
+  (it takes the latest keymap right before you paste)
+- press **Get from ZMK**, which downloads the key positions from ZMK itself (`zmkfirmware/zmk`).
+  When you fetch from GitHub and your zmk-config has no key positions, this happens as part of the same fetch
+- choose **Reload keymap** in the tray while your keymap comes from GitHub
+
 It never connects at startup, and it never sends your keystrokes or anything else.
 
 ## Settings file
@@ -92,7 +111,12 @@ You normally change everything in Settings. For the full list of keys, see
 - **A shortcut does nothing** — another app is probably using the same combination. Pick another one in Settings → Shortcuts
 - **Some layers are not followed** — the setup guide's "layer signals" step tells you why
   (for example, layers entered with `&tog`)
-- **The keys are in the wrong places** — in Settings → Keyboard, choose your shield's `.dtsi` as the physical layout
+- **The keys are in the wrong places** — in Settings → Keyboard, try **Get from ZMK** (the shield name is in your build.yaml).
+  For a custom keyboard, choose a `.dtsi` file that describes the key positions
+- **The app shows the sample keyboard** — your keymap could not be loaded (for example, the file was moved).
+  Choose it again in the setup guide that opens. If the settings file itself was broken, it was moved to
+  `config.broken-<date>.json` and a new one was created
+- **My keymap uses macros such as `ZMK_LAYER(...)` (zmk-helpers)** — not supported yet. The keymap needs to be written as `keymap { ... }`
 - **My zmk-config is private** — the app can't read private repositories. Download the files and choose the `.keymap` on your PC
 - **Can I use it on a work PC?** — it needs no administrator rights or installer and uses no keyboard hook,
   but follow your company's rules
@@ -111,4 +135,5 @@ See [docs/development.md](docs/development.md) and [DESIGN.md](DESIGN.md) (both 
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). For what the app bundles (the .NET runtime and key-position data from ZMK), see
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

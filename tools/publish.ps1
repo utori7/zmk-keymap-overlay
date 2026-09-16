@@ -1,7 +1,9 @@
 # Builds the release zip:
 #   - a single self-contained ZmkOverlay.exe (users do not need to install .NET)
 #   - the sample data next to it
-#   - README.md, README.ja.md and LICENSE
+#   - README.md, README.ja.md, LICENSE and THIRD-PARTY-NOTICES.md
+#   - licenses\ for the .NET runtime that the exe bundles
+#   - the images and docs\configuration.md that the READMEs link to
 #
 #   powershell -File tools\publish.ps1
 #
@@ -43,8 +45,34 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed ($LASTEXITCODE)" }
 $stray = Join-Path $staging 'config.json'
 if (Test-Path $stray) { Remove-Item $stray -Force }
 
-foreach ($doc in 'README.md', 'README.ja.md', 'LICENSE') {
+foreach ($doc in 'README.md', 'README.ja.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md') {
     Copy-Item (Join-Path $root $doc) $staging
+}
+
+# The READMEs link to these. Without them the images are broken in the unzipped copy.
+$docs = Join-Path $staging 'docs'
+New-Item -ItemType Directory -Force (Join-Path $docs 'images') | Out-Null
+Copy-Item (Join-Path $root 'docs\configuration.md') $docs
+Copy-Item (Join-Path $root 'docs\images\*.png') (Join-Path $docs 'images')
+
+# The single exe bundles the .NET runtime (MIT). Ship its license and notices with it.
+$runtime = (& $dotnet msbuild $project -nologo -getProperty:BundledNETCoreAppPackageVersion `
+    -p:RuntimeIdentifier=win-x64 -p:SelfContained=true | Out-String).Trim()
+if (-not $runtime) { throw 'Could not read the bundled .NET runtime version.' }
+
+$packages = if ($env:NUGET_PACKAGES) { $env:NUGET_PACKAGES } else { Join-Path $env:USERPROFILE '.nuget\packages' }
+$licenses = Join-Path $staging 'licenses'
+New-Item -ItemType Directory -Force $licenses | Out-Null
+
+$notices = @(
+    @{ From = "microsoft.netcore.app.runtime.win-x64\$runtime\LICENSE.TXT";              To = 'dotnet-runtime-LICENSE.txt' },
+    @{ From = "microsoft.netcore.app.runtime.win-x64\$runtime\THIRD-PARTY-NOTICES.TXT";  To = 'dotnet-runtime-THIRD-PARTY-NOTICES.txt' },
+    @{ From = "microsoft.windowsdesktop.app.runtime.win-x64\$runtime\LICENSE";           To = 'dotnet-windowsdesktop-LICENSE.txt' }
+)
+foreach ($notice in $notices) {
+    $source = Join-Path $packages $notice.From
+    if (-not (Test-Path $source)) { throw "License file not found: $source" }
+    Copy-Item $source (Join-Path $licenses $notice.To)
 }
 
 # Entries are added one by one with '/' separators. Compress-Archive and
