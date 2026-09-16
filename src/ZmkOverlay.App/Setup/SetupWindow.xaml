@@ -1,0 +1,226 @@
+<Window x:Class="ZmkOverlay.App.Setup.SetupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        ThemeMode="System"
+        Width="820" Height="680" MinWidth="680" MinHeight="520"
+        WindowStartupLocation="CenterScreen"
+        FontFamily="Segoe UI, Yu Gothic UI">
+
+    <!--
+      初めて使う人を、キーマップの場所 → キーボードの形 → ファームの書き換え → 動作確認 の順に案内する。
+      文言はコードビハインドの ApplyTexts で入れる（表示言語を開いたまま切り替えられるように）。
+    -->
+
+    <Window.Resources>
+        <Style x:Key="Heading" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="24" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+        </Style>
+        <Style x:Key="Lead" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,0,0,14" />
+        </Style>
+        <Style x:Key="Note" TargetType="TextBlock">
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Opacity" Value="0.72" />
+            <Setter Property="Margin" Value="0,2,0,8" />
+        </Style>
+        <Style x:Key="CardTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <!-- ライト / ダークのどちらでも見える、薄い灰色の枠。 -->
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Padding" Value="16,12" />
+            <Setter Property="Margin" Value="0,0,0,12" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="#33808080" />
+            <Setter Property="Background" Value="#0F808080" />
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="28,20,28,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock x:Name="StepText" Opacity="0.6" Margin="0,0,0,8" />
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,12,0">
+            <Grid>
+
+                <!-- ===== 1. ようこそ ===== -->
+                <StackPanel x:Name="WelcomePage">
+                    <TextBlock x:Name="WelcomeTitle" Style="{StaticResource Heading}" />
+                    <TextBlock x:Name="WelcomeLead" Style="{StaticResource Lead}" />
+                    <TextBlock x:Name="WelcomeSteps" Style="{StaticResource Lead}" />
+                    <DockPanel Margin="0,12,0,0">
+                        <TextBlock x:Name="WelcomeLanguageLabel" Width="160" VerticalAlignment="Center" />
+                        <ComboBox x:Name="WelcomeLanguage" Width="260" HorizontalAlignment="Left"
+                                  SelectionChanged="OnLanguageChanged" />
+                    </DockPanel>
+                </StackPanel>
+
+                <!-- ===== 2. キーマップの場所 ===== -->
+                <StackPanel x:Name="SourcePage" Visibility="Collapsed">
+                    <TextBlock x:Name="SourceTitle" Style="{StaticResource Heading}" />
+                    <TextBlock x:Name="SourceLead" Style="{StaticResource Lead}" />
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock x:Name="GitHubChoiceTitle" Style="{StaticResource CardTitle}" />
+                            <TextBlock x:Name="GitHubChoiceNote" Style="{StaticResource Note}" />
+                            <DockPanel>
+                                <Button x:Name="GitHubFetch" DockPanel.Dock="Right" MinWidth="96" Margin="8,0,0,0"
+                                        Click="OnGitHubFetch" />
+                                <TextBox x:Name="GitHubUrl" VerticalContentAlignment="Center" />
+                            </DockPanel>
+                            <DockPanel x:Name="GitHubChoice" Margin="0,8,0,0" Visibility="Collapsed">
+                                <Button x:Name="GitHubUse" DockPanel.Dock="Right" MinWidth="96" Margin="8,0,0,0"
+                                        Click="OnGitHubUse" />
+                                <ComboBox x:Name="GitHubKeymapBox" />
+                            </DockPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}">
+                        <DockPanel>
+                            <Button x:Name="LocalBrowse" DockPanel.Dock="Right" MinWidth="96" Margin="12,0,0,0"
+                                    VerticalAlignment="Center" Click="OnLocalBrowse" />
+                            <StackPanel>
+                                <TextBlock x:Name="LocalChoiceTitle" Style="{StaticResource CardTitle}" />
+                                <TextBlock x:Name="LocalChoiceNote" Style="{StaticResource Note}" />
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}">
+                        <DockPanel>
+                            <Button x:Name="SampleUse" DockPanel.Dock="Right" MinWidth="96" Margin="12,0,0,0"
+                                    VerticalAlignment="Center" Click="OnSampleUse" />
+                            <StackPanel>
+                                <TextBlock x:Name="SampleChoiceTitle" Style="{StaticResource CardTitle}" />
+                                <TextBlock x:Name="SampleChoiceNote" Style="{StaticResource Note}" />
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <TextBlock x:Name="SourceStatus" TextWrapping="Wrap" Opacity="0.85" />
+                </StackPanel>
+
+                <!-- ===== 3. キーボードの形 ===== -->
+                <StackPanel x:Name="ShapePage" Visibility="Collapsed">
+                    <TextBlock x:Name="ShapeTitle" Style="{StaticResource Heading}" />
+                    <TextBlock x:Name="ShapeLead" Style="{StaticResource Lead}" />
+
+                    <Border CornerRadius="8" Padding="16" MinHeight="120">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                <GradientStop Color="#FF7B8BA3" Offset="0" />
+                                <GradientStop Color="#FF4E5B70" Offset="1" />
+                            </LinearGradientBrush>
+                        </Border.Background>
+                        <Viewbox Stretch="Uniform" StretchDirection="DownOnly">
+                            <ContentControl x:Name="ShapePreview" />
+                        </Viewbox>
+                    </Border>
+
+                    <TextBlock x:Name="ShapeSource" Style="{StaticResource Note}" Margin="0,8,0,8" />
+                    <StackPanel Orientation="Horizontal">
+                        <Button x:Name="ShapeBrowse" Margin="0,0,8,0" Click="OnShapeBrowse" />
+                        <Button x:Name="ShapeAuto" Click="OnShapeAuto" />
+                    </StackPanel>
+
+                    <TextBlock x:Name="ShapeHostTitle" Style="{StaticResource CardTitle}" Margin="0,20,0,6" />
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton x:Name="ShapeJis" GroupName="SetupHostLayout" Margin="0,0,24,0" Checked="OnHostLayoutChecked" />
+                        <RadioButton x:Name="ShapeUs" GroupName="SetupHostLayout" Checked="OnHostLayoutChecked" />
+                    </StackPanel>
+                    <TextBlock x:Name="ShapeHostNote" Style="{StaticResource Note}" />
+                </StackPanel>
+
+                <!-- ===== 4. ファームの書き換え ===== -->
+                <StackPanel x:Name="FirmwarePage" Visibility="Collapsed">
+                    <TextBlock x:Name="FirmwareTitle" Style="{StaticResource Heading}" />
+                    <TextBlock x:Name="FirmwareLead" Style="{StaticResource Lead}" />
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel x:Name="FirmwareTable" />
+                    </Border>
+
+                    <StackPanel x:Name="FirmwareGitHub" Visibility="Collapsed">
+                        <TextBlock x:Name="FirmwareBackup" Style="{StaticResource Note}" Opacity="1" />
+                        <TextBlock x:Name="FirmwareGitHubSteps" Style="{StaticResource Lead}" />
+                        <WrapPanel>
+                            <Button x:Name="CopyAndOpen" Margin="0,0,8,8" Click="OnCopyAndOpen"
+                                    Style="{DynamicResource AccentButtonStyle}" />
+                            <Button x:Name="OpenActions" Margin="0,0,8,8" Click="OnOpenActions" />
+                            <Button x:Name="RecheckGitHub" Margin="0,0,8,8" Click="OnRecheckGitHub" />
+                        </WrapPanel>
+                    </StackPanel>
+
+                    <StackPanel x:Name="FirmwareLocal" Visibility="Collapsed">
+                        <TextBlock x:Name="FirmwareLocalSteps" Style="{StaticResource Lead}" />
+                        <WrapPanel>
+                            <Button x:Name="SaveOverwrite" Margin="0,0,8,8" Click="OnSaveOverwrite"
+                                    Style="{DynamicResource AccentButtonStyle}" />
+                            <Button x:Name="SaveAs" Margin="0,0,8,8" Click="OnSaveAs" />
+                        </WrapPanel>
+                    </StackPanel>
+
+                    <TextBlock x:Name="FirmwareStatus" TextWrapping="Wrap" Margin="0,4,0,8" />
+
+                    <StackPanel x:Name="FirmwareDetails" Visibility="Collapsed">
+                        <Button x:Name="ShowChanges" HorizontalAlignment="Left" Margin="0,0,0,8" Click="OnShowChanges" />
+                        <TextBox x:Name="ChangesBox" Visibility="Collapsed" IsReadOnly="True" FontFamily="Consolas"
+                                 TextWrapping="NoWrap" MaxHeight="300"
+                                 HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" />
+                        <TextBlock x:Name="FirmwareFlashNote" Style="{StaticResource Note}" Margin="0,8,0,0" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- ===== 5. 動作確認 ===== -->
+                <StackPanel x:Name="TestPage" Visibility="Collapsed">
+                    <TextBlock x:Name="TestTitle" Style="{StaticResource Heading}" />
+                    <TextBlock x:Name="TestLead" Style="{StaticResource Lead}" />
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel x:Name="TestList" />
+                    </Border>
+                </StackPanel>
+
+                <!-- ===== 6. 完了 ===== -->
+                <StackPanel x:Name="DonePage" Visibility="Collapsed">
+                    <TextBlock x:Name="DoneTitle" Style="{StaticResource Heading}" />
+                    <TextBlock x:Name="DoneLead" Style="{StaticResource Lead}" />
+
+                    <TextBlock x:Name="DoneModeTitle" Style="{StaticResource CardTitle}" Margin="0,8,0,6" />
+                    <RadioButton x:Name="DoneLayersOnly" GroupName="SetupMode" Checked="OnModeChecked" />
+                    <TextBlock x:Name="DoneLayersOnlyNote" Style="{StaticResource Note}" Margin="28,0,0,6" />
+                    <RadioButton x:Name="DoneAlways" GroupName="SetupMode" Checked="OnModeChecked" />
+                    <TextBlock x:Name="DoneAlwaysNote" Style="{StaticResource Note}" Margin="28,0,0,6" />
+
+                    <CheckBox x:Name="DoneRunAtLogin" Margin="0,16,0,0" Click="OnRunAtLoginClick" />
+                    <TextBlock x:Name="DoneRunAtLoginNote" Style="{StaticResource Note}" Margin="28,0,0,0" />
+                </StackPanel>
+
+            </Grid>
+        </ScrollViewer>
+
+        <TextBlock x:Name="ErrorText" Grid.Row="2" Margin="0,8,0,0" Foreground="#FFC42B1C"
+                   TextWrapping="Wrap" Visibility="Collapsed" />
+
+        <DockPanel Grid.Row="3" Margin="0,16,0,0" LastChildFill="False">
+            <Button x:Name="LaterButton" DockPanel.Dock="Left" MinWidth="100" Click="OnLater" />
+            <Button x:Name="NextButton" DockPanel.Dock="Right" MinWidth="120" Click="OnNext"
+                    Style="{DynamicResource AccentButtonStyle}" />
+            <Button x:Name="BackButton" DockPanel.Dock="Right" MinWidth="100" Margin="0,0,8,0" Click="OnBack" />
+        </DockPanel>
+    </Grid>
+</Window>

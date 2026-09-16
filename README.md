@@ -49,7 +49,9 @@ ZmkOverlay.exe --startup status
 dotnet run --project src/ZmkOverlay.App
 ```
 
-起動するとタスクトレイに常駐する。ウィンドウは `Ctrl+Alt+K` を押すまで出ない。
+起動するとタスクトレイに常駐する。設定ファイルが無ければ（初回起動）、初期設定の案内が開き、
+キーマップの場所・キーボードの形・ファームの書き換え・動作確認の順に進められる。
+トレイの「初期設定をやり直す…」からいつでも開ける。
 
 ### 見た目だけ確認する
 
@@ -58,6 +60,8 @@ dotnet run --project src/ZmkOverlay.App
 ```bash
 dotnet run --project src/ZmkOverlay.App -- --render out
 ```
+
+設定画面と初期設定の案内も、画面に出さずに全ページを書き出せる（`--render-settings out` / `--render-setup out`）。
 
 ## 配布する
 

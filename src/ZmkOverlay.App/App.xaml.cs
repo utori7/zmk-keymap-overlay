@@ -4,6 +4,7 @@ using System.Windows;
 using ZmkOverlay.App.Interop;
 using ZmkOverlay.App.Overlay;
 using ZmkOverlay.App.Settings;
+using ZmkOverlay.App.Setup;
 using ZmkOverlay.App.Text;
 using ZmkOverlay.Core.Config;
 using ZmkOverlay.Core.Model;
@@ -19,6 +20,7 @@ public partial class App : Application, ISettingsHost
     private LayerSyncService? _layerSync;
     private TrayIcon? _tray;
     private SettingsWindow? _settings;
+    private SetupWindow? _setup;
 
     private IDisposable? _toggleRegistration;
     private readonly List<IDisposable> _layerRegistrations = new();
@@ -66,7 +68,7 @@ public partial class App : Application, ISettingsHost
                 _configOverride = System.IO.Path.GetFullPath(e.Args[configIndex + 1]);
 
             if (TryRunRenderMode(e.Args)) return;
-            if (TryRunRenderSettingsMode(e.Args)) return;
+            if (TryRunRenderWindowMode(e.Args)) return;
             if (TryRunStartupMode(e.Args)) return;
 
             Initialize();
@@ -88,7 +90,7 @@ public partial class App : Application, ISettingsHost
         if (index < 0) return false;
 
         var outputDir = index + 1 < args.Length ? args[index + 1] : "render-out";
-        var (config, path) = LoadConfig();
+        var (config, path, _) = LoadConfig();
         var loaded = LoadKeymap(config, path);
         var panels = Render.KeymapRenderer.BuildPanels(config, loaded.Layout, loaded.Keymap);
 
@@ -106,17 +108,20 @@ public partial class App : Application, ISettingsHost
     }
 
     /// <summary>
-    /// 開発用: --render-settings &lt;出力ディレクトリ&gt; で設定画面の全ページを PNG に書き出して終了する。
-    /// 設定画面はトレイからしか開けず、確かめるには常駐させる必要があるため。
+    /// 開発用: --render-settings / --render-setup &lt;出力ディレクトリ&gt; で、設定画面または初期設定の
+    /// 全ページを PNG に書き出して終了する。どちらもトレイからしか開けず、確かめるには常駐させる必要があるため。
     /// 画面の外に置いて描くので、利用者の画面には何も出ない。ページ全体が写るよう縦に長くしてある。
     /// </summary>
-    private bool TryRunRenderSettingsMode(string[] args)
+    private bool TryRunRenderWindowMode(string[] args)
     {
-        var index = Array.FindIndex(args, a => a is "--render-settings");
-        if (index < 0) return false;
+        var settingsIndex = Array.FindIndex(args, a => a is "--render-settings");
+        var setupIndex = Array.FindIndex(args, a => a is "--render-setup");
+        if (settingsIndex < 0 && setupIndex < 0) return false;
 
+        var index = Math.Max(settingsIndex, setupIndex);
         var outputDir = index + 1 < args.Length ? args[index + 1] : "render-out";
-        var (config, path) = LoadConfig();
+
+        var (config, path, _) = LoadConfig();
         var loaded = LoadKeymap(config, path);
 
         _configPath = path;
@@ -126,34 +131,46 @@ public partial class App : Application, ISettingsHost
         _warnings = loaded.Warnings;
         _loaded = loaded;
 
-        var window = new SettingsWindow(this)
+        if (settingsIndex >= 0)
         {
-            ShowInTaskbar = false,
-            ShowActivated = false,
-            WindowStartupLocation = WindowStartupLocation.Manual,
-            Left = -20000,
-            Top = -20000,
-            Height = 1300,
-        };
+            var settings = new SettingsWindow(this);
+            RenderPages<SettingsPage>(settings, settings.ShowPage, "settings", outputDir);
+        }
+        else
+        {
+            var setup = new SetupWindow(this);
+            RenderPages<SetupStep>(setup, setup.ShowStep, "setup", outputDir);
+        }
 
+        Shutdown();
+        return true;
+    }
+
+    private static void RenderPages<TPage>(Window window, Action<TPage> show, string prefix, string outputDir)
+        where TPage : struct, Enum
+    {
+        window.ShowInTaskbar = false;
+        window.ShowActivated = false;
+        window.WindowStartupLocation = WindowStartupLocation.Manual;
+        window.Left = -20000;
+        window.Top = -20000;
+        window.Height = 1300;
         window.Show();
 
-        foreach (var page in Enum.GetValues<SettingsPage>())
+        foreach (var page in Enum.GetValues<TPage>())
         {
-            window.ShowPage(page);
+            show(page);
 
             // 表示の切り替えとテーマの適用を描画まで進めてから写す。
             window.Dispatcher.Invoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() => { }));
             window.UpdateLayout();
 
-            var file = System.IO.Path.Combine(outputDir, $"settings-{page.ToString().ToLowerInvariant()}.png");
+            var file = System.IO.Path.Combine(outputDir, $"{prefix}-{page.ToString().ToLowerInvariant()}.png");
             Render.OffscreenRenderer.RenderAsShown(window, file);
             Console.WriteLine(file);
         }
 
         window.Close();
-        Shutdown();
-        return true;
     }
 
     /// <summary>
@@ -186,7 +203,7 @@ public partial class App : Application, ISettingsHost
 
     private void Initialize()
     {
-        var (config, path) = LoadConfig();
+        var (config, path, firstRun) = LoadConfig();
         var loaded = LoadKeymap(config, path);
 
         _configPath = path;
@@ -203,6 +220,7 @@ public partial class App : Application, ISettingsHost
             toggle: ToggleOverlay,
             showLayer: ShowLayerByHand,
             openSettings: () => OpenSettings(SettingsPage.Keyboard),
+            openSetup: () => OpenSetup(SetupStep.Welcome),
             reload: Reload,
             exit: () => Shutdown(),
             alwaysVisible: config.IsAlwaysVisible,
@@ -217,22 +235,35 @@ public partial class App : Application, ISettingsHost
         _overlay.Start();
         _tray.ShowState(_overlay.IsEnabled, notify: false);
         _tray.ReportWarnings(_warnings);
+
+        // 初めて起動した人は、何をすればよいか分からない。サンプルを出したまま案内を開く。
+        if (firstRun) OpenSetup(SetupStep.Welcome);
     }
 
     // ---- 読み込みと反映 ----
 
-    private (AppConfig Config, string Path) LoadConfig()
+    /// <summary>設定ファイルを読む。無ければ既定値で作る（<c>Created</c> が true）。</summary>
+    private (AppConfig Config, string Path, bool Created) LoadConfig()
     {
         var path = _configOverride ?? ConfigPaths.FindConfig();
 
-        if (path is not null) return (AppConfig.Load(path), path);
+        if (path is not null) return (AppConfig.Load(path), path, false);
 
         // 初回起動。既定値を書き出して、以後は利用者が編集できるようにする。
         var created = new AppConfig();
         path = ConfigPaths.DefaultWriteTarget();
+
+        // exe の隣に書けず %APPDATA% に置いたときは、同梱のサンプルを相対パスでは指せない。
+        var configFolder = System.IO.Path.GetDirectoryName(path);
+        if (!string.Equals(configFolder, ConfigPaths.ExeDirectory, StringComparison.OrdinalIgnoreCase))
+        {
+            created.LayoutFile = System.IO.Path.Combine(ConfigPaths.ExeDirectory, created.LayoutFile);
+            created.KeymapFile = System.IO.Path.Combine(ConfigPaths.ExeDirectory, created.KeymapFile);
+        }
+
         created.Save(path);
 
-        return (created, path);
+        return (created, path, true);
     }
 
     /// <summary>キーのラベルも表示言語で変わるので、キーマップを読むより先に言語を決める。</summary>
@@ -319,7 +350,7 @@ public partial class App : Application, ISettingsHost
     {
         try
         {
-            var (config, path) = LoadConfig();
+            var (config, path, _) = LoadConfig();
             _configPath = path;
 
             var fetched = false;
@@ -374,6 +405,21 @@ public partial class App : Application, ISettingsHost
 
         if (_settings.WindowState == WindowState.Minimized) _settings.WindowState = WindowState.Normal;
         _settings.Activate();
+    }
+
+    private void OpenSetup(SetupStep step)
+    {
+        if (_setup is null)
+        {
+            _setup = new SetupWindow(this);
+            _setup.Closed += (_, _) => _setup = null;
+            _setup.Show();
+        }
+
+        _setup.ShowStep(step);
+
+        if (_setup.WindowState == WindowState.Minimized) _setup.WindowState = WindowState.Normal;
+        _setup.Activate();
     }
 
     // ---- 有効・無効 ----
@@ -531,6 +577,8 @@ public partial class App : Application, ISettingsHost
             return false;
         }
     }
+
+    void ISettingsHost.OpenSetup(SetupStep step) => OpenSetup(step);
 
     IDisposable ISettingsHost.SuspendHotkeys()
     {

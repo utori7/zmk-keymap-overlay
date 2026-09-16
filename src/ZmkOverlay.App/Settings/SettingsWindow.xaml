@@ -158,7 +158,9 @@
 
                     <!-- ===== レイヤー追従 ===== -->
                     <StackPanel x:Name="SyncPage" Visibility="Collapsed">
-                        <TextBlock x:Name="SyncExplain" Style="{StaticResource Note}" Margin="0,8,0,12" />
+                        <TextBlock x:Name="SyncExplain" Style="{StaticResource Note}" Margin="0,8,0,8" />
+                        <Button x:Name="OpenFirmwareSetup" HorizontalAlignment="Left" Margin="0,0,0,14"
+                                Click="OnOpenFirmwareSetup" />
                         <CheckBox x:Name="SyncEnabledBox" Click="OnSyncEnabledClick" />
                         <StackPanel Margin="28,8,0,0">
                             <RadioButton x:Name="SyncHoldRadio" GroupName="SyncMode" Margin="0,0,0,4" Checked="OnSyncModeChecked" />

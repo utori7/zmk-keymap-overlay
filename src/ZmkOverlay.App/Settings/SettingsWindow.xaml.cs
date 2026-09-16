@@ -188,15 +188,7 @@ public partial class SettingsWindow : Window
             // 指定が無いときは、どこで見つけたか（または推定したか）を見せる。
             // 推定だと分からないまま使うと、配置の違いに気づけない。
             var hasLayoutFile = !string.IsNullOrWhiteSpace(config.Zmk.PhysicalLayoutFile);
-            LayoutPath.Text = !fromZmk ? UiText.SampleKeymap
-                            : hasLayoutFile ? Resolve(config.Zmk.PhysicalLayoutFile!)
-                            : _host.LayoutSource switch
-                            {
-                                ZmkOverlay.Core.Model.LayoutSource.Keymap => UiText.LayoutInKeymap,
-                                ZmkOverlay.Core.Model.LayoutSource.FoundNearby => UiText.LayoutFoundNearby(_host.LayoutPath ?? ""),
-                                ZmkOverlay.Core.Model.LayoutSource.Guessed => UiText.LayoutGuessedLabel,
-                                _ => _host.LayoutPath ?? "",
-                            };
+            LayoutPath.Text = SourceActions.LayoutDescription(_host);
             LayoutPath.ToolTip = LayoutPath.Text;
             LayoutBrowse.IsEnabled = fromZmk;
             LayoutAuto.IsEnabled = fromZmk && hasLayoutFile;
@@ -510,6 +502,7 @@ public partial class SettingsWindow : Window
             PositionBox.SelectedIndex = position;
 
             SyncExplain.Text = UiText.SyncExplain;
+            OpenFirmwareSetup.Content = UiText.OpenFirmwareSetup;
             SyncEnabledBox.Content = UiText.SyncEnabled;
             SyncHoldRadio.Content = UiText.SyncHold;
             SyncToggleRadio.Content = UiText.SyncToggle;
@@ -669,40 +662,8 @@ public partial class SettingsWindow : Window
 
     private void OnBrowseKeymap(object sender, RoutedEventArgs e)
     {
-        var keymap = PickFile(UiText.ChooseKeymap, UiText.KeymapFilter, CurrentKeymapFolder());
-        if (keymap is null) return;
-
-        // 別のキーボードに切り替えることもあるので、前の物理レイアウトは引き継がない。
-        var next = _host.Config.Clone();
-        next.Zmk.KeymapFile = keymap;
-        next.Zmk.PhysicalLayoutFile = null;
-        next.Zmk.Source = "local";   // GitHub から読んでいた場合も、PC のファイルに切り替える
-
-        if (_host.TryApply(next, out var error))
-        {
-            ShowError(null);
-            return;
-        }
-
-        // 物理レイアウトがシールドの .dtsi に分かれている構成は多い。
-        // 失敗の理由がそれなら、続けてそのファイルを選んでもらう。
-        if (error != Strings.PhysicalLayoutMissing)
-        {
-            ShowError(error);
-            return;
-        }
-
-        MessageBox.Show(this, UiText.LayoutNeeded, Title, MessageBoxButton.OK, MessageBoxImage.Information);
-
-        var layout = PickFile(UiText.ChooseLayout, UiText.LayoutFilter, Path.GetDirectoryName(keymap));
-        if (layout is null)
-        {
-            ShowError(error);
-            return;
-        }
-
-        next.Zmk.PhysicalLayoutFile = layout;
-        ShowError(_host.TryApply(next, out error) ? null : error);
+        SourceActions.UseLocalKeymap(this, _host, out var error);
+        ShowError(error);
     }
 
     private void OnBrowseLayout(object sender, RoutedEventArgs e)
@@ -725,22 +686,13 @@ public partial class SettingsWindow : Window
         Apply(config => config.KeyboardLayout = us ? "us" : "jis");
     }
 
-    private string? PickFile(string title, string filter, string? folder)
-    {
-        var dialog = new Microsoft.Win32.OpenFileDialog
-        {
-            Title = title,
-            Filter = filter,
-            CheckFileExists = true,
-        };
+    private string? PickFile(string title, string filter, string? folder) =>
+        SourceActions.PickFile(this, title, filter, folder);
 
-        if (folder is not null && Directory.Exists(folder)) dialog.InitialDirectory = folder;
+    private string? CurrentKeymapFolder() => SourceActions.KeymapFolder(_host);
 
-        return dialog.ShowDialog(this) == true ? dialog.FileName : null;
-    }
-
-    private string? CurrentKeymapFolder() =>
-        _host.Config.Zmk.IsEnabled ? Path.GetDirectoryName(Resolve(_host.Config.Zmk.KeymapFile!)) : null;
+    private void OnOpenFirmwareSetup(object sender, RoutedEventArgs e) =>
+        _host.OpenSetup(ZmkOverlay.App.Setup.SetupStep.Firmware);
 
     private string Resolve(string path) => ConfigPaths.Resolve(_host.ConfigPath, path);
 

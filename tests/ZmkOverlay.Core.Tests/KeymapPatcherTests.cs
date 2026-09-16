@@ -102,6 +102,24 @@ public class KeymapPatcherTests : IDisposable
     }
 
     [Fact]
+    public void ChangesCanBeShownBeforeReplacingTheFile()
+    {
+        var patch = PatchPyuron();
+
+        // Pyuron では、親指の行だけが変わる。
+        var changed = Assert.Single(KeymapPatcher.ChangedLines(PyuronSource, patch.Text));
+        Assert.Equal(171, changed.Line);
+        Assert.Contains("&lt L_SYM INT5", changed.Before);
+        Assert.Contains("&zo_lt_l1 L_SYM INT5", changed.After);
+
+        var block = KeymapPatcher.GeneratedBlock(patch.Text);
+        Assert.NotNull(block);
+        Assert.StartsWith(KeymapPatcher.BeginMarker, block);
+        Assert.EndsWith(KeymapPatcher.EndMarker, block);
+        Assert.Null(KeymapPatcher.GeneratedBlock(PyuronSource));
+    }
+
+    [Fact]
     public void KeymapThatAlreadyHasSignalKeysIsLeftAlone()
     {
         // 手順書どおり layer-signal.dtsi を手で入れた Pyuron。

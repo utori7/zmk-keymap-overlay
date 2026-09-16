@@ -111,7 +111,10 @@ public static class GitHubSync
         config.Zmk.GitHub = new GitHubSourceConfig
         {
             Repository = location.FullName,
-            Branch = location.Branch,
+
+            // 既定のブランチから取ったときも、実際の名前を持つ。
+            // GitHub の編集画面の URL にはブランチ名が要る。
+            Branch = location.Branch ?? tree.Branch,
             KeymapPath = keymapPath,
         };
 
@@ -119,6 +122,17 @@ public static class GitHubSync
         config.Zmk.KeymapFile = System.IO.Path.GetRelativePath(folder, local).Replace('\\', '/');
         config.Zmk.PhysicalLayoutFile = null;
     }
+
+    /// <summary>
+    /// キーマップを GitHub のブラウザ画面で編集する URL。利用者はここに書き換え済みの内容を貼り付ける。
+    /// </summary>
+    public static string EditUrl(GitHubSourceConfig github) =>
+        $"https://github.com/{github.Repository}/edit/" +
+        $"{GitHubSource.EscapePath(github.Branch ?? "HEAD")}/{GitHubSource.EscapePath(github.KeymapPath ?? "")}";
+
+    /// <summary>ビルドの進み具合（GitHub Actions）の一覧。できたファームもここから取る。</summary>
+    public static string ActionsUrl(GitHubSourceConfig github) =>
+        $"https://github.com/{github.Repository}/actions";
 
     /// <summary>
     /// 設定に書かれたリポジトリから取り直す。利用者が物理レイアウトを選んでいたら、それは残す。

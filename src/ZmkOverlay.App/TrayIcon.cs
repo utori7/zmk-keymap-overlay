@@ -35,6 +35,7 @@ public sealed class TrayIcon : IDisposable
     private readonly ToolStripMenuItem _layersOnly;
     private readonly ToolStripMenuItem _always;
     private readonly ToolStripMenuItem _settings;
+    private readonly ToolStripMenuItem _setup;
     private readonly ToolStripMenuItem _reload;
     private readonly ToolStripMenuItem _warnings;
     private readonly ToolStripMenuItem _exit;
@@ -56,6 +57,7 @@ public sealed class TrayIcon : IDisposable
         Action toggle,
         Action<int> showLayer,
         Action openSettings,
+        Action openSetup,
         Action reload,
         Action exit,
         bool alwaysVisible,
@@ -97,6 +99,7 @@ public sealed class TrayIcon : IDisposable
         _mode.DropDownItems.Add(_always);
 
         _settings = new ToolStripMenuItem("", null, (_, _) => openSettings());
+        _setup = new ToolStripMenuItem("", null, (_, _) => openSetup());
         _reload = new ToolStripMenuItem("", null, (_, _) => reload());
 
         // バルーンは見逃すと二度と見られないので、警告があるあいだはメニューにも残す。
@@ -111,6 +114,7 @@ public sealed class TrayIcon : IDisposable
         menu.Items.Add(_mode);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_settings);
+        menu.Items.Add(_setup);
         menu.Items.Add(_reload);
         menu.Items.Add(_warnings);
         menu.Items.Add(new ToolStripSeparator());
@@ -148,6 +152,7 @@ public sealed class TrayIcon : IDisposable
         _always.Text = UiText.ModeAlways;
         _always.ToolTipText = UiText.ModeAlwaysTip;
         _settings.Text = UiText.Settings;
+        _setup.Text = UiText.SetupMenu;
         _reload.Text = UiText.ReloadKeymap;
         _warnings.Text = UiText.ViewWarnings(_currentWarnings.Count);
         _exit.Text = UiText.Exit;

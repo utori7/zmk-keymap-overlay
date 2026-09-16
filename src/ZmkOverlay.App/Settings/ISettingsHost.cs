@@ -47,6 +47,9 @@ internal interface ISettingsHost
     /// </summary>
     IDisposable SuspendHotkeys();
 
+    /// <summary>初期設定の案内を、指定したステップで開く。</summary>
+    void OpenSetup(ZmkOverlay.App.Setup.SetupStep step);
+
     /// <summary>反映が終わった。表示中の値やプレビューを取り直す合図。</summary>
     event Action? Applied;
 

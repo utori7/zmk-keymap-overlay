@@ -216,6 +216,8 @@ internal static class UiText
     public static string ColumnTest => T("テスト", "Test");
     public static string NoSignal => T("なし", "None");
 
+    public static string OpenFirmwareSetup => T("キーボードを書き換える…", "Update your keyboard…");
+
     public static string SignalAutoNote =>
         T("キーマップに合図キーが仕込まれていれば、自動で読み取って表に入ります。ここで変えると、そのレイヤーだけ設定が優先されます。",
           "Signal keys built into your keymap are detected and filled in automatically. Changing one here overrides it for that layer.");
@@ -259,4 +261,185 @@ internal static class UiText
     public static string ConfigFileLabel => T("設定ファイル", "Settings file");
     public static string OpenFolder => T("フォルダを開く", "Open folder");
     public static string VersionLabel => T("バージョン", "Version");
+
+    // ---- 初期設定 ----
+
+    public static string SetupTitle => T("はじめての設定", "Setup");
+    public static string SetupMenu => T("初期設定をやり直す…", "Run setup again…");
+    public static string SetupStepOf(int step, int total) => T($"ステップ {step} / {total}", $"Step {step} of {total}");
+    public static string SetupNext => T("次へ", "Next");
+    public static string SetupBack => T("戻る", "Back");
+    public static string SetupLater => T("あとで", "Later");
+    public static string SetupFinish => T("完了", "Finish");
+
+    public static string WelcomeTitle => T("ZMK Keymap Overlay へようこそ", "Welcome to ZMK Keymap Overlay");
+
+    public static string WelcomeLead =>
+        T("ZMK キーボードのキーマップを、画面の端に半透明で表示するアプリです。" +
+          "レイヤーキーを押しているあいだ、そのレイヤーの配置が出ます。",
+          "This app shows your ZMK keyboard's keymap on the edge of the screen. " +
+          "While you hold a layer key, that layer's keys appear.");
+
+    public static string WelcomeSteps =>
+        T("これから次の順に準備します（5 分ほど。キーボードを書き換える場合は、ビルドを待つ時間が加わります）。\n" +
+          "  1. キーマップの場所を教える\n" +
+          "  2. キーボードの形を確かめる\n" +
+          "  3. キーボードがレイヤーの合図を送るようにする\n" +
+          "  4. 動作を確かめる",
+          "We'll get ready in this order (about 5 minutes, plus build time if you update your keyboard):\n" +
+          "  1. Tell the app where your keymap is\n" +
+          "  2. Check the shape of your keyboard\n" +
+          "  3. Make your keyboard send layer signals\n" +
+          "  4. Try it out");
+
+    public static string SourceTitle => T("キーマップはどこにありますか？", "Where is your keymap?");
+    public static string SourceLead => T("ZMK の設定（zmk-config）がある場所を選んでください。", "Choose where your ZMK configuration (zmk-config) is.");
+    public static string ChoiceGitHubTitle => T("GitHub にある", "On GitHub");
+
+    public static string ChoiceGitHubNote =>
+        T("ブラウザで開いている zmk-config のアドレスを貼り付けて「取得」を押します（公開リポジトリのみ）。",
+          "Paste the address of your zmk-config page and press Fetch (public repositories only).");
+
+    public static string ChoiceLocalTitle => T("この PC にファイルがある", "On this PC");
+
+    public static string ChoiceLocalNote =>
+        T(".keymap ファイルを選びます。キーの並び（物理レイアウト）は同じフォルダから自動で探します。",
+          "Choose your .keymap file. The key positions (physical layout) are looked up in the same folder.");
+
+    public static string ChoiceSampleTitle => T("まずはサンプルで試す", "Just try a sample");
+
+    public static string ChoiceSampleNote =>
+        T("作者のキーボード（Pyuron）の配置で、見た目と操作を確かめます。あとから自分のものに変えられます。",
+          "See how it looks with the author's keyboard (Pyuron). You can switch to your own later.");
+
+    public static string UseSample => T("サンプルを使う", "Use the sample");
+    public static string SourceCurrent(string what) => T($"いまの読み込み元: {what}", $"Current source: {what}");
+
+    public static string ShapeTitle => T("キーボードの形は合っていますか？", "Does this look like your keyboard?");
+
+    public static string ShapeLead =>
+        T("キーの並びが実物と違うときは、シールドの .dtsi を選んでください。PC の配列（JIS / US）もここで合わせます。",
+          "If the key positions don't match, choose your shield's .dtsi file. Set this PC's keyboard layout (JIS / US) here too.");
+
+    public static string ShapeSourceLabel(string what) => T($"キーの並び: {what}", $"Key positions: {what}");
+    public static string ShapeBrowse => T("物理レイアウトを選ぶ…", "Choose physical layout…");
+
+    public static string FirmwareTitle => T("キーボードから合図を送れるようにする", "Let your keyboard send layer signals");
+
+    public static string FirmwareLeadNeeded =>
+        T("レイヤーに入ったことを PC に知らせるには、キーボードのファームを少し書き換える必要があります。" +
+          "書き換え済みのキーマップをアプリが用意しました。普段使わない F13〜F24 を合図に使い、ほかのアプリには届きません。",
+          "To tell the PC which layer you're on, your keyboard firmware needs a small change. " +
+          "The app has prepared an updated keymap. It uses the unused keys F13–F24 as signals; other apps never see them.");
+
+    public static string FirmwareLeadReady =>
+        T("このキーマップには合図キーが入っています。キーボードに書き込み済みなら、次のステップで確かめられます。",
+          "This keymap already has signal keys. If it's on your keyboard, you can try it in the next step.");
+
+    public static string FirmwareLeadNothing =>
+        T("合図を付けられるレイヤーがありません。キーボードを書き換えなくても、ショートカットで各レイヤーを表示できます。",
+          "No layer can get a signal. You can still show layers with shortcuts, without changing your keyboard.");
+
+    public static string FirmwareLeadSample =>
+        T("サンプルのキーマップは書き換えません。自分のキーマップを選んだあと、ここに戻ってきてください" +
+          "（トレイの「初期設定をやり直す…」）。",
+          "The sample keymap is not changed. Come back here after choosing your own keymap (\"Run setup again…\" in the tray).");
+
+    public static string FirmwareHasSignal(string key) => T($"合図キーあり（{key}）", $"Has a signal key ({key})");
+    public static string FirmwareWillAdd(string key) => T($"{key} を合図にします", $"Will use {key}");
+
+    public static string SkipReasonText(ZmkOverlay.Core.Zmk.SkippedLayer skipped) => skipped.Reason switch
+    {
+        ZmkOverlay.Core.Zmk.SkipReason.ToggleOrOneShot =>
+            T("&tog / &to / &sl で入るので、合図を付けられません", "Entered with &tog / &to / &sl, so it can't get a signal"),
+        ZmkOverlay.Core.Zmk.SkipReason.CustomHoldTap =>
+            T($"自作の {skipped.Detail} で入るので、書き換えません", $"Entered with your own {skipped.Detail}, so it is left as is"),
+        ZmkOverlay.Core.Zmk.SkipReason.NoFreeSignalKey =>
+            T("合図に使える F13〜F24 が足りません", "No free F13–F24 key is left for a signal"),
+        _ =>
+            T("キーで入るレイヤーではないので、追従できません（ショートカットで表示できます）",
+              "Not entered with a key, so it can't be followed (you can show it with a shortcut)"),
+    };
+
+    public static string FirmwareBackup =>
+        T("先に、今のファームを保存しておいてください。うまくいかなくても書き戻せます" +
+          "（「ビルド状況（Actions）を開く」→ 緑のチェックが付いた最新のビルド → 下の「Artifacts」からダウンロード）。",
+          "First, save your current firmware so you can go back if needed " +
+          "(\"Open builds (Actions)\" → the latest build with a green check → download it from \"Artifacts\").");
+
+    public static string FirmwareGitHubSteps =>
+        T("手順:\n" +
+          "  1. 下のボタンを押すと、書き換えた内容がコピーされ、GitHub の編集画面が開きます\n" +
+          "  2. 編集欄をクリックして Ctrl+A（全部選択）→ Ctrl+V（貼り付け）\n" +
+          "  3. 右上の「Commit changes」を押し、そのまま確定します\n" +
+          "  4. ビルド状況で緑のチェックが付くまで待ち（5〜10 分）、できたファームをキーボードに書き込みます\n" +
+          "  5. 「取り直して確かめる」を押します",
+          "Steps:\n" +
+          "  1. The button below copies the updated keymap and opens GitHub's editor\n" +
+          "  2. Click in the editor, then press Ctrl+A (select all) and Ctrl+V (paste)\n" +
+          "  3. Press \"Commit changes\" at the top right and confirm\n" +
+          "  4. Wait for a green check in the builds (5–10 min), then flash the firmware to your keyboard\n" +
+          "  5. Press \"Fetch again and check\"");
+
+    public static string CopyAndOpenEditor => T("コピーして GitHub の編集画面を開く", "Copy and open GitHub's editor");
+    public static string OpenActions => T("ビルド状況（Actions）を開く", "Open builds (Actions)");
+    public static string RecheckGitHub => T("取り直して確かめる", "Fetch again and check");
+
+    public static string CopiedAndOpened =>
+        T("書き換えた内容をコピーしました。開いた画面に貼り付けてください。", "Copied. Paste it into the page that opened.");
+
+    public static string FirmwareLocalSteps =>
+        T("手順:\n" +
+          "  1. 下のボタンでキーマップを書き換えます（元のファイルは .bak として残します）\n" +
+          "  2. いつもの方法で zmk-config をビルドし、できたファームをキーボードに書き込みます",
+          "Steps:\n" +
+          "  1. Update the keymap with the button below (the original is kept as .bak)\n" +
+          "  2. Build your zmk-config as usual and flash the firmware to your keyboard");
+
+    public static string SaveOverwrite => T("キーマップを書き換える", "Update the keymap file");
+    public static string SaveAs => T("別の名前で保存…", "Save as…");
+
+    public static string ConfirmOverwrite(string path) =>
+        T($"{path} を書き換えます。元のファイルは .bak として同じフォルダに残します。よろしいですか？",
+          $"{path} will be updated. The original is kept as .bak in the same folder. Continue?");
+
+    public static string KeymapChangedMeanwhile =>
+        T("キーマップのファイルが変わっていたので、書き換えを作り直しました。内容を確かめて、もう一度押してください。",
+          "The keymap file had changed, so the update was prepared again. Check it and press the button again.");
+
+    public static string Saved(string backup) => T($"書き換えました。元のファイルは {backup} にあります。", $"Updated. The original is at {backup}.");
+
+    public static string SavedAs(string path) =>
+        T($"{path} に保存しました。zmk-config のキーマップと差し替えてビルドしてください。",
+          $"Saved to {path}. Replace your zmk-config keymap with it and build.");
+
+    public static string ShowChanges => T("変更点を見る", "Show changes");
+    public static string ChangedLinesHeader => T("書き換える行:", "Lines that change:");
+    public static string AddedBlockHeader => T("追加する定義:", "Definitions that are added:");
+
+    public static string FirmwareFlashNote =>
+        T("書き込み方はキーボードによって違います（分割キーボードでは、キーマップを持つ側だけでよいことが多い）。" +
+          "キーボードの説明に従ってください。",
+          "How to flash depends on your keyboard (for split keyboards, usually only the half that holds the keymap). " +
+          "Follow your keyboard's instructions.");
+
+    public static string TestTitle => T("動作を確かめる", "Try it out");
+
+    public static string TestLead =>
+        T("キーボードでレイヤーキーを押してみてください。合図が届いたレイヤーに ✓ が付き、オーバーレイにそのレイヤーが出ます。",
+          "Press your layer keys. Layers whose signal arrives get a ✓, and the overlay shows them.");
+
+    public static string TestNothing =>
+        T("合図キーのあるレイヤーがまだありません。キーボードを書き換えて書き込んだあとで試せます。" +
+          "それまでは、ショートカットやトレイのメニューからレイヤーを表示できます。",
+          "No layer has a signal key yet. You can try this after updating and flashing your keyboard. " +
+          "Until then, show layers with shortcuts or from the tray menu.");
+
+    public static string DoneTitle => T("準備ができました", "You're all set");
+
+    public static string DoneLead(string toggleHotkey) =>
+        T($"オーバーレイは、画面右下のトレイにあるアイコンから操作できます。{toggleHotkey} で有効・無効を切り替えられます。" +
+          "設定はトレイの「設定…」からいつでも変えられます。",
+          $"Use the icon in the system tray (bottom right) to control the overlay. {toggleHotkey} turns it on and off. " +
+          "You can change settings any time from \"Settings…\" in the tray.");
 }

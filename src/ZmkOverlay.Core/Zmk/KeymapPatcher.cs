@@ -28,6 +28,9 @@ public sealed record PatchedLayer(int Layer, string SignalKey, int KeyCount);
 /// <summary>合図キーを付けなかったレイヤー。<paramref name="Detail"/> は自作 hold-tap の名前など。</summary>
 public sealed record SkippedLayer(int Layer, SkipReason Reason, string? Detail = null);
 
+/// <summary>書き換えで変わる行。<paramref name="Line"/> は元のファイルでの行番号（1 始まり）。</summary>
+public sealed record ChangedLine(int Line, string Before, string After);
+
 public sealed class KeymapPatch
 {
     /// <summary>書き換え後のキーマップ全文。</summary>
@@ -202,30 +205,59 @@ public static class KeymapPatcher
     /// 生成した区間を取り除き、書き換えたビヘイビア名を元に戻す。
     /// <see cref="Patch"/> の出力に対しては、元のキーマップがそのまま返る。
     /// </summary>
-    public static string RemoveGenerated(string source)
+    public static string RemoveGenerated(string source) =>
+        GeneratedName.Replace(RemoveBlock(source), m => "&" + m.Groups[1].Value);
+
+    /// <summary>生成した定義の区間（目印を含む）。無ければ null。利用者に変更点を見せるのに使う。</summary>
+    public static string? GeneratedBlock(string text)
     {
-        var text = source;
-
         var begin = text.IndexOf(BeginPrefix, StringComparison.Ordinal);
-        if (begin >= 0)
+        if (begin < 0) return null;
+
+        var end = text.IndexOf(EndMarker, begin, StringComparison.Ordinal);
+        return end < 0 ? null : text[begin..(end + EndMarker.Length)];
+    }
+
+    /// <summary>
+    /// 書き換えで変わる行。差し込んだ定義の区間は含めない（<see cref="GeneratedBlock"/> で別に見せる）。
+    /// 「どこが変わるのか」を、貼り替える前に利用者が確かめられるようにするため。
+    /// </summary>
+    public static IReadOnlyList<ChangedLine> ChangedLines(string original, string patched)
+    {
+        var before = SplitLines(original);
+        var after = SplitLines(RemoveBlock(patched));
+
+        // 区間を除けば行数は同じになるはず。違うなら元が別のファイル。
+        if (before.Length != after.Length) return Array.Empty<ChangedLine>();
+
+        var changed = new List<ChangedLine>();
+        for (var i = 0; i < before.Length; i++)
+            if (before[i] != after[i]) changed.Add(new ChangedLine(i + 1, before[i], after[i]));
+
+        return changed;
+    }
+
+    private static string[] SplitLines(string text) => text.Replace("\r\n", "\n").Split('\n');
+
+    /// <summary>目印の区間だけを取り除く。ビヘイビア名は戻さない。</summary>
+    private static string RemoveBlock(string text)
+    {
+        var begin = text.IndexOf(BeginPrefix, StringComparison.Ordinal);
+        if (begin < 0) return text;
+
+        var end = text.IndexOf(EndMarker, begin, StringComparison.Ordinal);
+        if (end < 0) return text;
+
+        end += EndMarker.Length;
+
+        // 差し込むときに付けた改行 2 つ（区間の後の空行）も一緒に消す。
+        for (var i = 0; i < 2; i++)
         {
-            var end = text.IndexOf(EndMarker, begin, StringComparison.Ordinal);
-            if (end >= 0)
-            {
-                end += EndMarker.Length;
-
-                // 差し込むときに付けた改行 2 つ（区間の後の空行）も一緒に消す。
-                for (var i = 0; i < 2; i++)
-                {
-                    if (string.CompareOrdinal(text, end, "\r\n", 0, 2) == 0) end += 2;
-                    else if (end < text.Length && text[end] == '\n') end += 1;
-                }
-
-                text = text.Remove(begin, end - begin);
-            }
+            if (string.CompareOrdinal(text, end, "\r\n", 0, 2) == 0) end += 2;
+            else if (end < text.Length && text[end] == '\n') end += 1;
         }
 
-        return GeneratedName.Replace(text, m => "&" + m.Groups[1].Value);
+        return text.Remove(begin, end - begin);
     }
 
     /// <summary>キーマップノードの中にある、各レイヤーの <c>bindings = &lt; … &gt;</c> の中身の範囲。</summary>

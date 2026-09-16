@@ -183,6 +183,27 @@ public class GitHubSourceTests : IDisposable
         Assert.Equal("C:/my/layout.dtsi", config.Zmk.PhysicalLayoutFile);
     }
 
+    [Fact]
+    public async Task DefaultBranchIsRememberedForTheEditPage()
+    {
+        var github = new FakeGitHub()
+            .Json("https://api.github.com/repos/o/r", """{ "default_branch": "paw3220" }""")
+            .Json("https://api.github.com/repos/o/r/git/trees/paw3220?recursive=1",
+                """{ "tree": [ { "path": "config/Pyuron.keymap", "type": "blob", "size": 5 } ] }""")
+            .Text("https://raw.githubusercontent.com/o/r/paw3220/config/Pyuron.keymap", "body");
+
+        var config = new AppConfig();
+        var source = new GitHubSource(new HttpClient(github));
+        var location = new GitHubLocation("o", "r");   // ブランチを指定していない
+
+        var tree = await source.ListAsync(location);
+        await GitHubSync.UseAsync(config, Path.Combine(_directory, "config.json"), source, location, tree, "config/Pyuron.keymap");
+
+        Assert.Equal("paw3220", config.Zmk.GitHub.Branch);
+        Assert.Equal("https://github.com/o/r/edit/paw3220/config/Pyuron.keymap", GitHubSync.EditUrl(config.Zmk.GitHub));
+        Assert.Equal("https://github.com/o/r/actions", GitHubSync.ActionsUrl(config.Zmk.GitHub));
+    }
+
     /// <summary>決まった URL にだけ応答を返し、それ以外は 404 にする。</summary>
     private sealed class FakeGitHub : HttpMessageHandler
     {
