@@ -57,7 +57,7 @@ public sealed class KeymapPatch
 ///   1. レイヤーの中の &amp;mo / &amp;lt のビヘイビア名を、合図付きのものに変える。引数は変えない。
 ///        &amp;lt L_SYM INT5  →  &amp;zo_lt_l1 L_SYM INT5
 ///   2. 最初の <c>/ {</c> の直前に、その定義を目印付きで差し込む。
-///      中身は実機で成立を確かめた zmk/layer-signal.dtsi と同じ構造。
+///      中身は実機で成立を確かめた docs/examples/pyuron/layer-signal.dtsi と同じ構造。
 ///
 /// 前回の生成分は取り除いてから考えるので、何度かけても同じ結果になる。
 /// 目印の区間を消して名前を戻せば、元のキーマップに戻る（<see cref="RemoveGenerated"/>）。

@@ -1,246 +1,114 @@
 # ZMK Keymap Overlay
 
-ZMK のキーマップを Windows の画面上に半透過で重ねて表示する常駐ツール。
+A small Windows tray app that shows your [ZMK](https://zmk.dev/) keyboard's keymap on the edge of the screen.
+While you hold a layer key, that layer's keys appear.
 
-設計と技術的な判断の理由は [DESIGN.md](DESIGN.md) にある。
+![The overlay](docs/images/overlay-en.png)
 
-## 現状
+[日本語](README.ja.md)
 
-**Phase 0 / 1 / 2 が完了。**
+## Features
 
-- 半透過・最前面・クリックスルー・フォーカスを奪わないオーバーレイ
-- `Ctrl+Alt+K` で有効 / 無効（無効のあいだは何をしても表示されない）
-- **キーボードのレイヤーに追従**（既定では L1 以上にいるあいだだけ表示）
-- **`.keymap` と `.dtsi` を直接読む**（手書き JSON も引き続き使える）
-- `Ctrl+Alt+<レイヤー番号>` で手動表示（組み合わせはレイヤーごとに変えられる）
-- Windows のサインイン時に自動起動（任意・レジストリは使わない）
-- タスクトレイから 有効切替 / レイヤー表示 / 見せ方 / 設定画面 / 再読み込み / 終了
-- 設定画面（大きさ・位置・合図キー・ショートカット・言語など。変更はその場で反映・保存）
-- 日本語と英語
+- Shows a layer only while its layer key is held (or keep it on screen all the time)
+- Reads your zmk-config directly — just paste the GitHub URL, or pick a `.keymap` file on your PC
+- Finds the key positions (physical layout) automatically
+- Prepares an updated keymap so your keyboard can tell the PC which layer is active
+- Shows any layer with a shortcut too (you can choose the combinations)
+- English / Japanese, light / dark
+- No administrator rights, no installer, no registry. It does **not** use a keyboard hook to watch your typing
 
-レイヤー追従を使うには ZMK 側にも変更が要る。手順は [zmk/README.md](zmk/README.md)。
-**ファームを焼く前でも PC 側は普通に動く**（合図キーが来ないだけ）。
+## Requirements
 
-まだ実装していないもの: 押下キーのハイライト。
-ハイライトは全キー入力の観測が要るため、このツールの前提と衝突する。
-選択肢と比較は [DESIGN.md](DESIGN.md) の「押下キーのハイライト」を参照。
+- Windows 10 or 11 (64-bit)
+- A keyboard running ZMK Firmware
 
-## 自動起動
+## Install
 
-設定画面（トレイの「設定…」）の **全般 → Windows のサインイン時に起動する** で切り替える。
-スタートアップフォルダにショートカットを置くだけで、レジストリは触らない。
-エクスプローラで `shell:startup` を開けば実体が見えるし、消せば解除される。
+1. Download `ZmkOverlay-<version>-win-x64.zip` from [Releases](../../releases)
+2. Right-click the zip → **Extract All**, and put the folder anywhere you like (for example in Documents)
+3. Double-click `ZmkOverlay.exe`
+   - If Windows says **"Windows protected your PC"**, click **More info** → **Run anyway**.
+     This appears because the app is not code-signed.
+4. The setup guide opens. Follow it step by step
 
-コマンドからも操作できる。
+You don't need to install .NET; it is included.
 
-```bash
-ZmkOverlay.exe --startup on
-ZmkOverlay.exe --startup off
-ZmkOverlay.exe --startup status
-```
+![Setup: where is your keymap?](docs/images/setup-source-en.png)
 
-`--config` を付けて起動していれば、その指定もショートカットに引き継がれる。
+## Setup guide
 
-## 動かす
+1. **Where is your keymap?** — a GitHub URL, a `.keymap` file on this PC, or a sample
+2. **Does this look like your keyboard?** — check the preview; if the keys are misplaced, choose your shield's `.dtsi`
+3. **Let your keyboard send layer signals** — see below
+4. **Try it out**
+5. **Done**
 
-開発には .NET 10 SDK が要る。
+You can run it again any time from the tray menu (**Run setup again…**).
 
-```bash
-dotnet run --project src/ZmkOverlay.App
-```
+### Why the keyboard needs a small change
 
-起動するとタスクトレイに常駐する。設定ファイルが無ければ（初回起動）、初期設定の案内が開き、
-キーマップの場所・キーボードの形・ファームの書き換え・動作確認の順に進められる。
-トレイの「初期設定をやり直す…」からいつでも開ける。
+ZMK switches layers inside the keyboard, so the PC never hears about it.
+The app therefore asks the keyboard to also hold one of the unused keys F13–F24 while a layer is active.
+The app listens for these keys to switch the overlay, and reserves them so no other app sees them.
 
-### 見た目だけ確認する
+- The app prepares the updated keymap for you. On GitHub, you just copy it into the editor and commit
+- Typing feel stays the same (it uses the same settings as ZMK's built-in `&lt`)
+- **Save your current firmware first**, so you can go back if needed
+- Without the change, you can still show layers with shortcuts or from the tray menu
 
-常駐させずに全レイヤーを PNG に書き出せる。
+![Setup: layer signals](docs/images/setup-firmware-en.png)
 
-```bash
-dotnet run --project src/ZmkOverlay.App -- --render out
-```
+## Using it
 
-設定画面と初期設定の案内も、画面に出さずに全ページを書き出せる（`--render-settings out` / `--render-setup out`）。
+- **Left-click the tray icon** (bottom right of the screen) for the menu
+- **Ctrl+Alt+K** turns the overlay on and off
+- **Ctrl+Alt+number** shows a layer (you can change these in Settings)
+- **Settings** (tray → Settings…): size, position, opacity, when to show, signal keys, shortcuts,
+  language, start when signing in
 
-## 配布する
+![Settings](docs/images/settings-display-en.png)
 
-会社 PC のように管理者権限が使えない環境を前提にしている。
-どちらの形式もインストーラ不要・レジストリ不要で、フォルダごと置けば動く。
+## Network use
 
-**ランタイム同梱（exe 1 個・約 150MB・.NET 不要）**
+The app contacts GitHub (`api.github.com` and `raw.githubusercontent.com`) only when you press
+**Fetch** or **Fetch again**, or **Reload keymap** in the tray while your keymap comes from GitHub.
+It never connects at startup, and it never sends your keystrokes or anything else.
 
-```bash
-dotnet publish src/ZmkOverlay.App -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
-```
+## Settings file
 
-**ランタイム別（数 MB・.NET デスクトップランタイムが必要）**
+`config.json` lives next to `ZmkOverlay.exe` (or in `%APPDATA%\ZmkOverlay\` if that folder is not writable).
+You normally change everything in Settings. For the full list of keys, see
+[docs/configuration.md](docs/configuration.md) (Japanese).
 
-```bash
-dotnet publish src/ZmkOverlay.App -c Release -r win-x64 --self-contained false
-```
+## Uninstall
 
-WPF は `PublishTrimmed` に対応しないため、同梱版のサイズは削れない。
+1. If you turned on **Start when I sign in to Windows**, turn it off in Settings → General first
+   (or delete the shortcut in `shell:startup`)
+2. Choose **Exit** from the tray menu
+3. Delete the folder. Nothing is written to the registry
 
-## 設定
+## FAQ
 
-`config.json` を **exe と同じフォルダ**から探し、無ければ `%APPDATA%\ZmkOverlay\` を見る。
-どちらにも無ければ初回起動時に既定値を書き出す。
+- **A shortcut does nothing** — another app is probably using the same combination. Pick another one in Settings → Shortcuts
+- **Some layers are not followed** — the setup guide's "layer signals" step tells you why
+  (for example, layers entered with `&tog`)
+- **The keys are in the wrong places** — in Settings → Keyboard, choose your shield's `.dtsi` as the physical layout
+- **My zmk-config is private** — the app can't read private repositories. Download the files and choose the `.keymap` on your PC
+- **Can I use it on a work PC?** — it needs no administrator rights or installer and uses no keyboard hook,
+  but follow your company's rules
 
-| キー | 既定値 | 意味 |
-|---|---|---|
-| `zmk.keymapFile` | なし | `.keymap` を直接読む。指定するとこちらが優先される |
-| `zmk.physicalLayoutFile` | なし | 物理レイアウトを持つ `.dtsi`。省略すると、キーマップのフォルダ以下から探し、無ければキーマップの書き方から推定する |
-| `layoutFile` | `data/layouts/pyuron.json` | 手書き物理レイアウト。config.json からの相対パス |
-| `keymapFile` | `data/keymaps/pyuron.json` | 手書きキーマップ |
-| `keyUnitPx` | `44` | キー 1u のピクセル数。全体の大きさはこれで決まる |
-| `opacity` | `0.88` | オーバーレイの不透明度 |
-| `position` | `BottomCenter` | `BottomCenter` / `BottomLeft` / `BottomRight` / `TopCenter` / `TopLeft` / `TopRight` / `Center` |
-| `margin` | `48` | 画面端からの余白 |
-| `keyboardLayout` | `jis` | ラベル解決に使う配列（Phase 1 以降） |
-| `language` | `auto` | 表示言語。`ja` / `en`。`auto` は Windows の表示言語に従う |
-| `toggleHotkey` | `Ctrl+Alt+K` | 表示切替 |
-| `enableManualLayerKeys` | `true` | ショートカットでレイヤーを手で表示する |
-| `layerHotkeys` | なし | レイヤー番号 → ショートカット。例 `{"1": {"modifiers": ["Ctrl","Shift"], "key": "Q"}}`。書かなければ `Ctrl+Alt+<番号>`（0〜9）、`key` を空にすると割り当てない |
-| `displayMode` | `layersOnly` | **有効のときの見せ方。下記** |
-| `layerSync.enabled` | `true` | キーボードのレイヤーに追従する |
-| `layerSync.mode` | `hold` | `hold` = 押している間だけ表示 / `toggle` = 押すたび切替 |
-| `layerSync.pollIntervalMs` | `15` | 合図キーが離されたかを見に行く間隔 |
-| `layerSync.graceMs` | `150` | 押下を観測できないまま経過したら離されたとみなす時間 |
+## Building from source
 
-### 表示の考え方
-
-**`Ctrl+Alt+K` はマスタースイッチ**で、無効にしているあいだは何をしても表示されない。
-有効にしているあいだの見せ方を `displayMode` で選ぶ。
-
-| | 無効のとき | 有効のとき |
-|---|---|---|
-| `layersOnly`（既定） | 出ない | **L1 以上にいるあいだだけ表示**。L0 では出ない |
-| `always` | 出ない | 常時表示。レイヤーに応じて中身が変わり、離すと L0 に戻る |
-
-L0（ベースレイヤー）が自動で出ないのは、合図キーを持たないため
-（[zmk/README.md](zmk/README.md) 参照）。
-
-トレイメニューの **「表示の仕方」** からも切り替えられる。
-2 つを並べてあるので、選んでいない側が何になるかも読める。
-そちらで変えると設定ファイルにも書き戻される。
-
-有効・無効はトレイメニューの先頭（「無効にする」／「有効にする」）と
-アイコンのツールチップで分かる。`layersOnly` では無効にしても
-画面上は何も変わらない（もともと出ていない）ため、切り替え時はバルーン通知も出す。
-
-ふだんは設定画面から変えればよい（変更はその場で反映・保存される）。
-ファイルを手で編集したときは、トレイの「キーマップを再読み込み」で反映される。
-
-### zmk-config を直接読む
-
-`zmk.keymapFile` を指定すると、`.keymap` を毎回パースして表示する。
-キーマップを変えたらトレイの「再読み込み」を押すだけでよく、
-JSON を書き直す必要はない。設定例は [data/config.zmk.example.json](data/config.zmk.example.json)。
-
-| キー | 意味 |
-|---|---|
-| `zmk.source` | `local`（既定）または `github`。設定画面の「GitHub から読み込む」で取得すると `github` になる |
-| `zmk.github` | GitHub から読むときの取得元（`repository` / `branch` / `keymapPath`）。取り直しに使う |
-| `zmk.labelOverrides` | キーコードの表示差し替え。例 `{"INT4": "かな"}` |
-| `zmk.layerNames` | レイヤー名の差し替え。既定はノード名から作る（`default_layer` → `DEFAULT`） |
-| `zmk.signalKeys` | レイヤー番号 → 合図キー。例 `{"1": "F13"}` |
-
-読めるもの:
-
-- `#define`（オブジェクト形・関数形、多段展開）
-- `LS()` / `LC()` / `LA()` / `LG()` の入れ子
-- キーマップ内で定義した hold-tap（`&hml` などの hold / tap 判別）
-- `combos`
-- JIS / US の差（`keyboardLayout` で切替。`LS(N8)` は US なら `*`、JIS なら `(`）
-
-読まないもの:
-
-- `#include <...>` のシステムヘッダ。ZMK のソースが手元に無くても動くよう、
-  キーコード名は内蔵表で解決する
-- `#if` 系の条件分岐。本文はそのまま残し、警告として通知する
-
-解釈できなかったキーコードやビヘイビアは**名前をそのまま表示する**。
-空白にすると「キーが無い」のか「解釈できなかった」のか画面から区別できないため。
-
-### キーマップの解釈結果をテキストで見る
-
-どのバインディングがどう解釈されたかは、絵より一覧のほうが速い。
+You need the .NET 10 SDK.
 
 ```bash
-dotnet run --project tools/KeymapDump -- path/to/Pyuron.keymap path/to/Pyuron.dtsi
-```
-
-`config.json` を渡すと、アプリと同じ設定で読んだ結果が出る。
-
-```bash
-dotnet run --project tools/KeymapDump -- path/to/config.json
-```
-
-### ファームを焼く前に動作を見る
-
-`HotkeyProbe --hold` で合図キーを合成できる。オーバーレイを起動した状態で:
-
-```bash
-dotnet run --project tools/HotkeyProbe -- --hold F13 3000
-```
-
-3 秒間 L1 SYM が表示され、離すと消えれば PC 側は正しく動いている。
-
-## 構成
-
-```
-src/ZmkOverlay.Core/   UI 非依存。devicetree パーサ、モデル、設定
-  Dts/                 プリプロセッサと devicetree パーサ
-  Zmk/                 キーコード表、バインディング解釈、キーマップ読み取り
-src/ZmkOverlay.App/    WPF。オーバーレイ、描画、Win32 相互運用、トレイ
-tools/HotkeyProbe/     ホットキー方式が成立するかを測る検証ツール
-tools/KeymapDump/      パーサの解釈結果をテキストで出す
-tests/                 パーサのテストと、実物の zmk-config フィクスチャ
-data/                  レイアウトとキーマップ。ビルド時に出力先へコピーされる
-zmk/                   zmk-config へ入れる変更
-```
-
-## テスト
-
-```bash
+dotnet build
 dotnet test
+powershell -File tools/publish.ps1
 ```
 
-パーサは実物の zmk-config（`tests/fixtures/`）に対しても走らせている。
-合成した小さな入力だけでは、HRM・入れ子修飾・JIS 別名といった
-実際の組み合わせを踏めないため。
+See [docs/development.md](docs/development.md) and [DESIGN.md](DESIGN.md) (both in Japanese).
 
-表示のオン・オフの規則は、ホットキー・レイヤー追従・ウィンドウの可視状態が
-噛み合った結果なので単体テストで囲えない。実アプリを合成キーで動かして確かめる。
+## License
 
-```bash
-powershell -File tools/verify-overlay.ps1
-```
-
-**画面がロックされていると動かない。** ロック中は入力デスクトップが別になり、
-合成キーは `GetAsyncKeyState` には映るのに `WM_HOTKEY` が配送されないため、
-すべて FAIL に見える。スクリプトはロックを検出して終了する。
-
-## HotkeyProbe
-
-レイヤー連動の土台になる「`RegisterHotKey` で予約したキーを `GetAsyncKeyState` で
-追えるか」を実測する道具。結果は [DESIGN.md](DESIGN.md) の「V1 の検証結果」にある。
-
-`SendInput` でキーを合成して自動測定する:
-
-```bash
-dotnet run --project tools/HotkeyProbe -- --auto F13
-```
-
-予約したキーが他アプリに漏れないかを測る。一瞬だけウィンドウが前面に出る:
-
-```bash
-dotnet run --project tools/HotkeyProbe -- --suppress F13
-```
-
-実際のキーボードで確かめる。指定したキーは測定中だけ他アプリに届かなくなる:
-
-```bash
-dotnet run --project tools/HotkeyProbe -- --manual F10
-```
+[MIT](LICENSE)

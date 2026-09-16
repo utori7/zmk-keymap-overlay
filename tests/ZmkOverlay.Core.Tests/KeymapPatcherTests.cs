@@ -6,7 +6,7 @@ namespace ZmkOverlay.Core.Tests;
 /// <summary>
 /// 変更済みキーマップの生成。devicetree としてビルドが通るかはここでは分からないので、
 /// 「読み直すと合図キーが見つかり、見た目は元と同じ」「何度かけても同じ」「元に戻せる」を守る。
-/// 生成する定義の形は、実機で成立を確かめた zmk/layer-signal.dtsi と同じにしてある。
+/// 生成する定義の形は、実機で成立を確かめた docs/examples/pyuron/layer-signal.dtsi と同じにしてある。
 /// </summary>
 public class KeymapPatcherTests : IDisposable
 {
@@ -130,7 +130,7 @@ public class KeymapPatcherTests : IDisposable
             .Replace("&lt L_SYM INT5  &lt L_NAV SPACE", "&lt_sym L_SYM INT5  &lt_nav L_NAV SPACE")
             .Replace("&lt L_FUNC ENTER   &lt L_SYS INT4", "&lt_func L_FUNC ENTER   &lt_sys L_SYS INT4");
 
-        ReadAsConfig(manual, "zmk/layer-signal.dtsi");
+        ReadAsConfig(manual, "docs/examples/pyuron/layer-signal.dtsi");
         var patch = KeymapPatcher.Patch(manual, Path.Combine(_directory, "config", "Pyuron.keymap"));
 
         Assert.False(patch.Changed);

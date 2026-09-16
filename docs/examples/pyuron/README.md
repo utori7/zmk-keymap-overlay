@@ -1,4 +1,8 @@
-# ZMK 側の変更 — 作業手順
+# ZMK 側の変更 — 作業手順（Pyuron の例）
+
+> **これは作者のキーボード（Pyuron）に、手作業で合図キーを入れたときの記録。**
+> ふつうはアプリの初期設定の案内（「キーボードの書き換え」）が、書き換え済みのキーマップを作るので、
+> この手順は要らない。仕組みを知りたいとき、手で入れたいときの参考として残している。
 
 オーバーレイをキーボードのレイヤーに追従させるための作業。
 **GitHub のウェブ画面とファイルのコピーだけで完結する。**
@@ -224,14 +228,30 @@ commit した瞬間に、GitHub が自動でファームウェアを作り始め
 
 ---
 
+## 押し心地の修正（2026-09-16）
+
+最初に配った `layer-signal.dtsi` は、親指キーの押し心地（`flavor`）が組み込みの `&lt` と違っていた
+（`hold-preferred`。正しくは `tap-preferred`）。`hold-preferred` だと、Space や Enter を押したまま
+次の文字を素早く打ったときにレイヤーへ入りやすい。すでに焼いている場合は、次の手順で直す。
+
+1. ブラウザで `https://github.com/utori7/zmk-config-Pyuron` を開き、**`config`** フォルダ →
+   **`layer-signal.dtsi`** をクリック
+2. 右上のえんぴつマーク ✏️（Edit this file）をクリック
+3. `Ctrl+F` で `hold-preferred` を探し、**4 か所とも** `tap-preferred` に書き換える
+   （`flavor = "hold-preferred";` → `flavor = "tap-preferred";`）
+4. 右上の **Commit changes...** → そのまま **Commit changes**
+5. [2. GitHub がビルドするのを待つ](#2-github-がビルドするのを待つ) と
+   [3. 右手側に書き込む](#3-右手側に書き込む) を、最初と同じようにやる
+
+書き込んだあと、[4. 確認する](#4-確認する) の 1〜4 がこれまでどおりなら完了。
+
+---
+
 ## PC 側の設定
 
-キーボードを書き込んだら、オーバーレイの `config.json` に対応表を書く。
-設定例は [../data/config.zmk.example.json](../data/config.zmk.example.json) がそのまま使える。
-
-```json
-"zmk": { "signalKeys": { "1": "F13", "2": "F14", "3": "F15", "5": "F16" } }
-```
+合図キーの対応は、アプリがキーマップから自動で読み取る。`config.json` に対応表を書く必要はない
+（書けばそちらが優先される）。設定例は
+[../../../data/config.zmk.example.json](../../../data/config.zmk.example.json)。
 
 書き込む前でも、PC 側だけなら確かめられる。
 
@@ -262,7 +282,7 @@ L4 はトラックボール操作で `zip_mouse_temp_layer` が自動 ON にす�
 
 PC 側は `RegisterHotKey` で合図キーを予約する。予約したキーは
 フォーカスのあるアプリに届かなくなるため、F13〜が漏れることはない
-（[../DESIGN.md](../DESIGN.md) の「抑止の検証結果」で実測済み）。
+（[../../../DESIGN.md](../../../DESIGN.md) の「抑止の検証結果」で実測済み）。
 
 ## 前提にしているキーマップ
 
@@ -273,7 +293,7 @@ PC 側は `RegisterHotKey` で合図キーを予約する。予約したキー�
 | コミット | `6ec4af4` "Update key bindings in Pyuron.keymap" (2026-08-15) |
 
 このコミットに対して `git apply --check` が通ることを確認済み。
-コマンドが使えるなら `zmk/Pyuron.keymap.patch` を `git apply` してもよい。
+コマンドが使えるなら、このフォルダの `Pyuron.keymap.patch` を `git apply` してもよい。
 
 既存キーマップに F13〜F24 の使用は無く、追加するラベル名
 （`lt_sym` / `mo_sig_*` / `SIG_*`）とも衝突しないことを確認済み。

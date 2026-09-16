@@ -17,6 +17,12 @@
     <AssemblyName>ZmkOverlay</AssemblyName>
     <RootNamespace>ZmkOverlay.App</RootNamespace>
 
+    <!-- 設定画面の「バージョン」と、配布 zip の名前（tools/publish.ps1）に使う。 -->
+    <Version>0.1.0</Version>
+    <Product>ZMK Keymap Overlay</Product>
+    <Description>Shows your ZMK keymap on top of the screen</Description>
+    <Copyright>Copyright (c) 2026 utori7</Copyright>
+
     <!-- 単一 exe で配布するときも WPF は Trim できないので指定しない。 -->
     <SelfContained>false</SelfContained>
 

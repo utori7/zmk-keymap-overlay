@@ -4,7 +4,7 @@ using ZmkOverlay.Core.Zmk;
 namespace ZmkOverlay.Core.Tests;
 
 /// <summary>
-/// zmk/layer-signal.dtsi を当てたキーマップが、素のキーマップと
+/// docs/examples/pyuron/layer-signal.dtsi を当てたキーマップが、素のキーマップと
 /// 同じに見えることを確かめる。
 ///
 /// 合図キーを足したせいでオーバーレイの表示が変わってしまうと、
@@ -27,14 +27,14 @@ public class LayerSignalDtsiTests : IDisposable
         File.Copy(Fixture("config/boards/shields/Pyuron/Pyuron.dtsi"),
             Path.Combine(shield, "Pyuron.dtsi"));
 
-        File.Copy(RepositoryFile("zmk/layer-signal.dtsi"),
+        File.Copy(RepositoryFile("docs/examples/pyuron/layer-signal.dtsi"),
             Path.Combine(config, "layer-signal.dtsi"));
 
         File.WriteAllText(Path.Combine(config, "Pyuron.keymap"), Patch(
             File.ReadAllText(Fixture("config/Pyuron.keymap"))));
     }
 
-    /// <summary>zmk/Pyuron.keymap.patch と同じ 2 か所を当てる。</summary>
+    /// <summary>docs/examples/pyuron/Pyuron.keymap.patch と同じ 2 か所を当てる。</summary>
     private static string Patch(string keymap)
     {
         // include はレイヤー番号の #define より後に置く必要がある。

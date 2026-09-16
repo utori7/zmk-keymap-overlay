@@ -17,7 +17,7 @@ index 25510f9..20754c4 100644
  #define L_SYS    5   // bluetooth / boot     - Kana hold  (pos 38)
  
 +/* Layer-entry signal keys for the PC-side keymap overlay.
-+ * Must come after the L_* defines above. See zmk/README.md in the
++ * Must come after the L_* defines above. See docs/examples/pyuron/README.md in the
 + * ZmkOverlay project for what this does and how to verify it.
 + */
 +#include "layer-signal.dtsi"

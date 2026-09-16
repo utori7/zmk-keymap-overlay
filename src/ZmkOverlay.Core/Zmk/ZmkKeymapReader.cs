@@ -351,7 +351,7 @@ public static class ZmkKeymapReader
     /// <summary>
     /// キーマップに仕込まれた合図キーを探す。設定に対応表を手で書かなくて済むようにするため。
     ///
-    /// 合図キーは、レイヤーに入るマクロの中で押される。zmk/layer-signal.dtsi も、
+    /// 合図キーは、レイヤーに入るマクロの中で押される。docs/examples/pyuron/layer-signal.dtsi も、
     /// アプリが生成する書き換えも、この形をしている。
     ///
     ///   &lt;&amp;macro_press &amp;macro_param_1to1 &amp;mo MACRO_PLACEHOLDER&gt;, &lt;&amp;macro_press &amp;kp F13&gt;, ...

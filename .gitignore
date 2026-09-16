@@ -12,3 +12,9 @@ config.json
 # --render の既定の出力先
 render-out/
 out/
+
+# tools/publish.ps1 の出力（配布 zip）
+artifacts/
+
+# GitHub から取ってきたキーマップの保存先（設定ファイルの隣にできる）
+cache/

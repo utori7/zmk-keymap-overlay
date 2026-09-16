@@ -12,9 +12,12 @@ public static class ConfigPaths
     public const string AppFolderName = "ZmkOverlay";
     public const string ConfigFileName = "config.json";
 
+    /// <summary>
+    /// exe のあるフォルダ。配布物は単一 exe なので、アセンブリの場所（Assembly.Location）は使えない
+    /// （単一 exe の中では空文字になる）。
+    /// </summary>
     public static string ExeDirectory =>
-        Path.GetDirectoryName(Environment.ProcessPath
-            ?? System.Reflection.Assembly.GetEntryAssembly()!.Location)!;
+        Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
 
     public static string RoamingDirectory =>
         Path.Combine(

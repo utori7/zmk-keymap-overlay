@@ -12,6 +12,8 @@ ZMK キーマップを Windows 画面上に半透過オーバーレイ表示す�
 | 2 | ~~設定 UI~~ | 設定画面として実装済み（「設定画面」の節） |
 | 3 | **会社 PC での確認（V4）** | 未署名 exe の実行可否と配置先。利用者の判断で保留中 |
 | 4 | 手動レイヤー経路の不安定さ | 未解決。「検証」の節を参照 |
+| 5 | **GitHub での公開** | リポジトリの作成・push・Releases への zip の設置。利用者が中身を見てから決める（「公開」の節） |
+| 6 | **生成した書き換えで実際にビルドできるかの確認** | `KeymapPatcher` の出力で GitHub Actions が通ることは、まだ確かめていない。Pyuron は手作業の版で動いている |
 
 一般公開に向けた UI と導入体験の作り直しを進めている（.NET 10 化・日英対応・見た目・トレイ・
 設定画面・初回セットアップ・キーマップ書き換えの生成）。
@@ -264,7 +266,7 @@ pos 37  &lt L_FUNC ENTER    pos 38  &lt L_SYS  INT4
 確かめると組み込みは `tap-preferred` だった。2026-09-16 に直した。記憶や推測で書かず、ソースで確かめること。
 打鍵感を変えないため。
 
-適用手順は [zmk/README.md](zmk/README.md)。
+適用手順は [docs/examples/pyuron/README.md](docs/examples/pyuron/README.md)。
 
 ### 合図キーの自動検出
 
@@ -416,7 +418,7 @@ risk と工数がまったく違う。
 Phase 2 は実機で通った。ファームを焼いた状態で、キーボードとして正常に動作し、
 レイヤーに入るとオーバーレイの表示も追従することを確認済み。
 `wait-ms = <0>` を入れたことでレイヤー有効化の遅れも体感されなかった。
-ZMK 側の適用手順は [zmk/README.md](zmk/README.md)。
+ZMK 側の適用手順は [docs/examples/pyuron/README.md](docs/examples/pyuron/README.md)。
 
 ## 表示状態の持ち方
 
@@ -541,6 +543,21 @@ Windows 11 風テーマの背景は Windows（Mica）が描くため、ウィン
 
 **ビルドに失敗したまま `--render` / `--render-settings` を付けて起動しないこと。** 古い exe はこの指定を知らず、
 普通に常駐して戻ってこない。一度これでスクリプトが止まり、開発版がトレイに残った。
+
+## 公開
+
+- ライセンスは MIT。最初の公開は 0.1.0（まず試してもらう段階）
+- 配布物は `tools/publish.ps1` で作る。ランタイム同梱の単一 exe（.NET のインストール不要）、
+  サンプルの data、README、LICENSE を zip にまとめる。exe の隣に config.json を入れない
+  （入っていると、誰が使っても初期設定の案内が開かない）
+- 署名していないので、初回起動時に SmartScreen の警告が出る。コード署名は有料なので、
+  README で「詳細情報 → 実行」を案内する
+- README は使う人向け（英語 `README.md` / 日本語 `README.ja.md`）。
+  開発の話は `docs/development.md`、設定項目は `docs/configuration.md` に分けた
+- 画面の画像は `--render-*` で書き出したものを切り抜いて `docs/images/` に置く。
+  利用者の PC のパスが写る部分は切り落とす
+- 作者の Pyuron に手で合図キーを入れた記録は `docs/examples/pyuron/` に移した。一般の利用者はアプリの案内を使う
+- GitHub リポジトリの作成と公開は、利用者が中身を見てから決める（2026-09-16 時点で未実施）
 
 ## 初期設定の案内
 
