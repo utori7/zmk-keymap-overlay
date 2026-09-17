@@ -287,6 +287,28 @@ public class GitHubSourceTests : IDisposable
     }
 
     [Fact]
+    public void ZmkRevisionFallsBackToTheManifestDefault()
+    {
+        // ZMK 公式の zmk-config テンプレートの書き方。
+        const string west = """
+            manifest:
+              defaults:
+                revision: v0.3
+              remotes:
+                - name: zmkfirmware
+                  url-base: https://github.com/zmkfirmware
+              projects:
+                - name: zmk
+                  remote: zmkfirmware
+                  import: app/west.yml
+              self:
+                path: config
+            """;
+
+        Assert.Equal("v0.3", ZmkShieldSource.ParseRevision(west));
+    }
+
+    [Fact]
     public void VersionedShieldNamesAlsoTryTheFamilyFolder()
     {
         Assert.Equal(

@@ -138,27 +138,50 @@ public static class ZmkShieldSource
             .ToList();
     }
 
-    /// <summary>west.yml で zmk のプロジェクトに書かれた revision。無ければ main。</summary>
+    /// <summary>
+    /// west.yml で zmk のプロジェクトに書かれた revision。書かれていなければ <c>defaults</c> の revision
+    /// （ZMK 公式のテンプレートはこの書き方）。どちらも無ければ main。
+    /// </summary>
     public static string ParseRevision(string westYml)
     {
         var lines = westYml.Replace("\r\n", "\n").Split('\n').Select(StripComment).ToList();
+        string? defaults = null;
 
         for (var i = 0; i < lines.Count; i++)
         {
+            if (Regex.IsMatch(lines[i], @"^\s*defaults\s*:\s*$"))
+            {
+                var indent = Indent(lines[i]);
+                for (var j = i + 1; j < lines.Count && (lines[j].Trim().Length == 0 || Indent(lines[j]) > indent); j++)
+                {
+                    if (Revision(lines[j]) is { } value) defaults ??= value;
+                }
+
+                continue;
+            }
+
             var project = Regex.Match(lines[i], @"^(\s*)-\s*name\s*:\s*[""']?zmk[""']?\s*$");
             if (!project.Success) continue;
 
             for (var j = i + 1; j < lines.Count; j++)
             {
                 if (Regex.IsMatch(lines[j], @"^\s*-\s")) break;   // 次のプロジェクト
+                if (lines[j].Trim().Length > 0 && Indent(lines[j]) <= project.Groups[1].Length) break;   // projects の外
 
-                var revision = Regex.Match(lines[j], @"^\s*revision\s*:\s*[""']?([^""'\s]+)[""']?\s*$");
-                if (revision.Success) return revision.Groups[1].Value;
+                if (Revision(lines[j]) is { } value) return value;
             }
         }
 
-        return "main";
+        return defaults ?? "main";
     }
+
+    private static string? Revision(string line)
+    {
+        var match = Regex.Match(line, @"^\s*revision\s*:\s*[""']?([^""'\s]+)[""']?\s*$");
+        return match.Success ? match.Groups[1].Value : null;
+    }
+
+    private static int Indent(string line) => line.Length - line.TrimStart().Length;
 
     private static string StripComment(string line)
     {
