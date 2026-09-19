@@ -57,7 +57,7 @@ internal sealed class OverlayController
     /// <summary>表示中のキーマップ。条件付きレイヤーの判定に使う。</summary>
     public Keymap Keymap => _window.Keymap;
 
-    public bool IsVisible => _window.IsVisible;
+    public bool IsVisible => _window.IsShown;
 
     public bool IsEnabled => _enabled;
 
@@ -138,7 +138,7 @@ internal sealed class OverlayController
 
     /// <summary>トグル方式のとき、同じレイヤーの合図キーで消せるようにする。</summary>
     public bool IsShowingLayer(int layerId)
-        => _window.IsVisible && _manualLayer is null && _window.CurrentLayerId == layerId;
+        => _window.IsShown && _manualLayer is null && _window.CurrentLayerId == layerId;
 
     // ---- 表示の決定 ----
 

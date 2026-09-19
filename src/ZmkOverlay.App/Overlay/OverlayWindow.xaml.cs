@@ -31,6 +31,12 @@ public partial class OverlayWindow : Window
     /// <summary>全レイヤーぶんの作り置き。寸法は揃えてある。</summary>
     private IReadOnlyList<FrameworkElement> _panels = Array.Empty<FrameworkElement>();
 
+    /// <summary>隠す前に待つ描画の回数（<see cref="HideOverlay"/>）。</summary>
+    private const int FramesBeforeHide = 3;
+
+    /// <summary>隠すまでに待つ残りの描画回数。0 なら隠す途中ではない。</summary>
+    private int _framesUntilHide;
+
     public OverlayWindow(AppConfig config, PhysicalLayout layout, Keymap keymap)
     {
         InitializeComponent();
@@ -123,8 +129,14 @@ public partial class OverlayWindow : Window
         return true;
     }
 
+    /// <summary>表示中か。隠す途中（中身は消えていて、ウィンドウを隠すのを待っている）なら false。</summary>
+    public bool IsShown => IsVisible && _framesUntilHide == 0;
+
     public void ShowOverlay()
     {
+        CancelPendingHide();
+        Body.Visibility = Visibility.Visible;
+
         if (!IsVisible)
         {
             Show();
@@ -137,11 +149,48 @@ public partial class OverlayWindow : Window
         Reposition();
     }
 
-    public void HideOverlay() => Hide();
+    /// <summary>
+    /// 中身を消した絵を描かせてから、ウィンドウを隠す。
+    ///
+    /// 透過ウィンドウ（AllowsTransparency）は、隠しても最後に描いた絵を持っている。
+    /// 隠しているあいだは描き直さないので、そのまま隠すと、次に表示したとき新しいレイヤーが描けるまでの一瞬、
+    /// 前に出していたレイヤーが見える（L1 を離して L2 を押すと、L1 が一瞬出てから L2 になる）。
+    /// 先に空の絵を描かせておけば、その一瞬は何も見えない。表示する側を遅らせずに済む。
+    ///
+    /// 中身は次の描画で消えるので、見た目は今までどおりすぐ消える。
+    /// </summary>
+    public void HideOverlay()
+    {
+        if (!IsVisible || _framesUntilHide > 0) return;
+
+        // Hidden は場所を取ったまま見えなくするので、ウィンドウの大きさは変わらない。
+        Body.Visibility = Visibility.Hidden;
+
+        // 空の絵を描く描画と、それが画面に届くまでの余裕を 1 回ずつ待つ。
+        _framesUntilHide = FramesBeforeHide;
+        CompositionTarget.Rendering += OnRenderingBeforeHide;
+    }
+
+    private void OnRenderingBeforeHide(object? sender, EventArgs e)
+    {
+        if (--_framesUntilHide > 0) return;
+
+        CompositionTarget.Rendering -= OnRenderingBeforeHide;
+        Hide();
+    }
+
+    /// <summary>隠す途中で表示を求められたら、隠すのをやめる。</summary>
+    private void CancelPendingHide()
+    {
+        if (_framesUntilHide == 0) return;
+
+        CompositionTarget.Rendering -= OnRenderingBeforeHide;
+        _framesUntilHide = 0;
+    }
 
     public void Toggle()
     {
-        if (IsVisible) HideOverlay();
+        if (IsShown) HideOverlay();
         else ShowOverlay();
     }
 
