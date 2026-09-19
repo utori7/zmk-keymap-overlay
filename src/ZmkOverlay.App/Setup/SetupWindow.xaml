@@ -41,6 +41,16 @@
             <Setter Property="BorderBrush" Value="#33808080" />
             <Setter Property="Background" Value="#0F808080" />
         </Style>
+        <!-- 試験的な機能の印。Card と同じく半透明の色にして、ライト / ダークのどちらでも見えるようにする。 -->
+        <Style x:Key="Badge" TargetType="Border">
+            <Setter Property="Padding" Value="8,2" />
+            <Setter Property="Margin" Value="12,0,0,10" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="#B3D08A00" />
+            <Setter Property="Background" Value="#26D08A00" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
     </Window.Resources>
 
     <Grid Margin="28,20,28,20">
@@ -163,8 +173,15 @@
 
                 <!-- ===== 4. ファームの書き換え ===== -->
                 <StackPanel x:Name="FirmwarePage" Visibility="Collapsed">
-                    <TextBlock x:Name="FirmwareTitle" Style="{StaticResource Heading}" />
+                    <WrapPanel>
+                        <TextBlock x:Name="FirmwareTitle" Style="{StaticResource Heading}" />
+                        <Border Style="{StaticResource Badge}">
+                            <TextBlock x:Name="FirmwareBadge" FontSize="12" FontWeight="SemiBold" />
+                        </Border>
+                    </WrapPanel>
                     <TextBlock x:Name="FirmwareLead" Style="{StaticResource Lead}" />
+                    <TextBlock x:Name="FirmwareExperimental" Style="{StaticResource Note}" Opacity="1"
+                               Margin="0,-6,0,14" Visibility="Collapsed" />
 
                     <Border Style="{StaticResource Card}">
                         <StackPanel x:Name="FirmwareTable" />
@@ -199,6 +216,19 @@
                                  HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" />
                         <TextBlock x:Name="FirmwareFlashNote" Style="{StaticResource Note}" Margin="0,8,0,0" />
                     </StackPanel>
+
+                    <!-- このアプリの書き換えが入っているときだけ出す。 -->
+                    <Border x:Name="FirmwareUndo" Style="{StaticResource Card}" Visibility="Collapsed">
+                        <StackPanel>
+                            <TextBlock x:Name="FirmwareUndoTitle" Style="{StaticResource CardTitle}" />
+                            <TextBlock x:Name="FirmwareUndoNote" Style="{StaticResource Note}" Opacity="1" />
+                            <WrapPanel>
+                                <Button x:Name="UndoCopyAndOpen" Margin="0,0,8,0" Click="OnUndoCopyAndOpen" />
+                                <Button x:Name="UndoLocal" Margin="0,0,8,0" Click="OnUndoLocal" />
+                                <Button x:Name="ReportProblem" Margin="0,0,8,0" Click="OnReport" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
 
                 <!-- ===== 5. 動作確認 ===== -->
@@ -207,6 +237,14 @@
                     <TextBlock x:Name="TestLead" Style="{StaticResource Lead}" />
                     <Border Style="{StaticResource Card}">
                         <StackPanel x:Name="TestList" />
+                    </Border>
+
+                    <!-- このアプリの書き換えが入っているときだけ出す。うまくいったという報告も集めたいので。 -->
+                    <Border x:Name="TestReport" Style="{StaticResource Card}" Visibility="Collapsed">
+                        <StackPanel>
+                            <TextBlock x:Name="TestReportNote" TextWrapping="Wrap" Margin="0,0,0,10" />
+                            <Button x:Name="ReportResult" HorizontalAlignment="Left" Click="OnReport" />
+                        </StackPanel>
                     </Border>
                 </StackPanel>
 

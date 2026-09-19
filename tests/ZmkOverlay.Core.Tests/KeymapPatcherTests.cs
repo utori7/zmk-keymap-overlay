@@ -40,7 +40,7 @@ public class KeymapPatcherTests : IDisposable
 
         Assert.True(patch.Changed);
         Assert.Equal(
-            new[] { (1, "F13"), (2, "F14"), (3, "F15"), (5, "F16") },
+            new[] { (1, "F13"), (2, "F16"), (3, "F17"), (5, "F18") },
             patch.Added.Select(a => (a.Layer, a.SignalKey)));
         Assert.Empty(patch.AlreadySignaled);
 
@@ -60,7 +60,7 @@ public class KeymapPatcherTests : IDisposable
 
         Assert.Empty(after.Warnings);
         Assert.Equal(
-            new[] { null, "F13", "F14", "F15", null, "F16" },
+            new[] { null, "F13", "F16", "F17", null, "F18" },
             after.Keymap.Layers.Select(l => l.DetectedSignalKey));
 
         for (var layer = 0; layer < before.Layers.Count; layer++)
@@ -96,7 +96,7 @@ public class KeymapPatcherTests : IDisposable
         Assert.False(twice.Changed);
         Assert.Empty(twice.Added);
         Assert.Equal(
-            new Dictionary<int, string> { [1] = "F13", [2] = "F14", [3] = "F15", [5] = "F16" },
+            new Dictionary<int, string> { [1] = "F13", [2] = "F16", [3] = "F17", [5] = "F18" },
             twice.AlreadySignaled);
         Assert.Equal(new[] { new SkippedLayer(4, SkipReason.NoEntryKey) }, twice.Skipped);
     }
@@ -109,7 +109,7 @@ public class KeymapPatcherTests : IDisposable
         var again = KeymapPatcher.Patch(patched, Fixtures.DemoKeymap);
 
         Assert.True(again.Changed);
-        Assert.Equal(new[] { (4, "F17") }, again.Added.Select(a => (a.Layer, a.SignalKey)));
+        Assert.Equal(new[] { (4, "F19") }, again.Added.Select(a => (a.Layer, a.SignalKey)));
         Assert.Equal(new[] { 1, 2, 3, 5 }, again.AlreadySignaled.Keys.Order());
         Assert.Empty(again.Skipped);
 
@@ -118,6 +118,36 @@ public class KeymapPatcherTests : IDisposable
         Assert.Contains("&mo L_MOUSE", line.Before);
         Assert.Contains("&zo_mo_l4 L_MOUSE", line.After);
         Assert.Contains("&mo L_MOUSE", patched.Replace("\r\n", "\n").Split('\n')[line.Line - 1]);
+    }
+
+    [Fact]
+    public void SignalKeysFromAnEarlierOrderAreKept()
+    {
+        // 以前の版は F13 から順に割り当てていた（L2 が F14）。書き込み済みのファームと食い違わないよう、そのまま使う。
+        var older = PatchDemo().Text.Replace("F16", "F14", StringComparison.Ordinal);
+        var again = KeymapPatcher.Patch(older, Fixtures.DemoKeymap);
+
+        Assert.False(again.Changed);
+        Assert.Equal("F14", again.AlreadySignaled[2]);
+
+        // あとから足したレイヤーには、空いている中で先の F16 を使う。
+        var added = KeymapPatcher.Patch(older.Replace("&kp G ", "&mo L_MOUSE ", StringComparison.Ordinal), Fixtures.DemoKeymap);
+        Assert.Equal(new[] { (4, "F16") }, added.Added.Select(a => (a.Layer, a.SignalKey)));
+        Assert.Equal("F14", added.AlreadySignaled[2]);
+    }
+
+    [Fact]
+    public void KeysThatActOnOtherComputersAreUsedLast()
+    {
+        // F14 / F15 は macOS の画面の明るさ、F20 / F21 は Linux のマイクとタッチパッド。ほかが尽きたときだけ使う。
+        var keymap = SmallKeymap.Replace(
+            "&kp F13  &mo 1",
+            "&kp F13 &kp F16 &kp F17 &kp F18 &kp F19 &kp F22 &kp F23 &kp F24  &mo 1",
+            StringComparison.Ordinal);
+
+        var patch = KeymapPatcher.Patch(keymap, Path.Combine(_directory, "full.keymap"));
+
+        Assert.Equal(new[] { (1, "F14") }, patch.Added.Select(a => (a.Layer, a.SignalKey)));
     }
 
     [Fact]
@@ -151,7 +181,7 @@ public class KeymapPatcherTests : IDisposable
         var block = KeymapPatcher.GeneratedBlock(PatchDemo().Text)!;
 
         Assert.Contains("display-name = \"Momentary Layer + F13\";", block);
-        Assert.Contains("display-name = \"Layer-Tap + F16\";", block);
+        Assert.Contains("display-name = \"Layer-Tap + F18\";", block);
     }
 
     [Fact]
@@ -195,8 +225,8 @@ public class KeymapPatcherTests : IDisposable
     {
         var patch = KeymapPatcher.Patch(SmallKeymap, Path.Combine(_directory, "small.keymap"));
 
-        // F13 はキーマップで普通のキーとして使われているので、次の F14 を使う。
-        Assert.Equal(new[] { (1, "F14") }, patch.Added.Select(a => (a.Layer, a.SignalKey)));
+        // F13 はキーマップで普通のキーとして使われているので、次の F16 を使う。
+        Assert.Equal(new[] { (1, "F16") }, patch.Added.Select(a => (a.Layer, a.SignalKey)));
         Assert.Contains("&zo_mo_l1 1", patch.Text);
         Assert.Contains("zo_mo_l1: zo_mo_l1", patch.Text);
         Assert.DoesNotContain("zo_lt_l", patch.Text);   // &lt が無ければ hold-tap は作らない

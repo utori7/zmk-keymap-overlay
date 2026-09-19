@@ -44,7 +44,7 @@ Opening `ZmkOverlay.exe` again while it is running opens Settings instead of sta
 1. **Where is your keymap?** — a GitHub URL, a `.keymap` file on this PC, or a sample
 2. **Does this look like your keyboard?** — check the preview; if the keys are misplaced, press **Get from ZMK**,
    or choose a `.dtsi` file that describes the key positions
-3. **Let your keyboard send layer signals** — see below
+3. **Let your keyboard send layer signals** (experimental) — see below
 4. **Try it out**
 5. **Done**
 
@@ -59,10 +59,28 @@ The app listens for these keys to switch the overlay, and reserves them so no ot
 - The app prepares the updated keymap for you. On GitHub, you just copy it into the editor and commit
 - Typing feel stays the same (it uses the same settings as ZMK's built-in `&lt`)
 - Conditional layers, such as an Adjust layer entered by holding Lower and Raise together, are shown too
+- **This is experimental.** Updated keymaps are known to build and to work on the author's keyboard,
+  but haven't been tried on other keyboards yet. Please [tell us how it went](#reporting-results)
 - **Save your current firmware first**, so you can go back if needed
+- **If the build fails, don't flash it.** "If something goes wrong" in the setup guide removes the changes from your keymap
+  (on GitHub, it copies your keymap without them and opens the editor)
+- **Using the same keyboard on other computers.** The signal keys also reach computers that don't run this app.
+  On a Mac, F14 / F15 change the screen brightness; on Linux, F20 may mute the microphone and F21 may toggle the touchpad.
+  The app uses these four only when it runs out of other F keys
 - Without the change, you can still show layers with shortcuts or from the tray menu
 
 ![Setup: layer signals](docs/images/setup-firmware-en.png)
+
+### Reporting results
+
+If you tried updating your keyboard, please tell us how it went — whether it worked or not — on the
+[report page](https://github.com/utori7/zmk-keymap-overlay/issues/new?template=keyboard-update.yml).
+If you open it with **Report the result** in the setup guide's "Try it out" step, or **Report the problem** under
+"If something goes wrong", your keyboard and ZMK version are already filled in.
+
+- Please include: the result, your keyboard, the ZMK version, and whether you updated on GitHub or a file on your PC
+- If the build fails, include the error from the job with the red cross in Actions
+- Once it has worked on several keyboards and no serious problems remain, it will stop being experimental
 
 ## Using it
 
@@ -85,13 +103,17 @@ You can pick other combinations in Settings.
 The app downloads files from GitHub (`api.github.com` and `raw.githubusercontent.com`) only when you:
 
 - press **Fetch** or **Fetch again** in Settings or the setup guide
-- press **Copy and open GitHub's editor** or **Fetch again and check** in the setup guide
+- press **Copy and open GitHub's editor**, **Fetch again and check** or
+  **Copy without the changes and open GitHub's editor** in the setup guide
   (it takes the latest keymap right before you paste)
 - press **Get from ZMK**, which downloads the key positions from ZMK itself (`zmkfirmware/zmk`).
   When you fetch from GitHub and your zmk-config has no key positions, this happens as part of the same fetch
 - choose **Reload keymap** in the tray while your keymap comes from GitHub
 
 It never connects at startup, and it never sends your keystrokes or anything else.
+
+**Report the result** and **Report the problem** only open GitHub's report page in your browser.
+They fill in your keyboard, ZMK version and app version; whether to submit is up to you on that page.
 
 ## Settings file
 

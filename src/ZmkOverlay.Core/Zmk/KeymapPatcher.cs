@@ -95,6 +95,14 @@ public static class KeymapPatcher
 
     private static readonly Regex SignalKeyInUse = new(@"\bF(1[3-9]|2[0-4])\b", RegexOptions.Compiled);
 
+    /// <summary>
+    /// 合図キーを割り当てる順。同じキーボードを別の PC につなぐと、合図キーはそのまま届く。
+    /// macOS は F14 / F15 で画面の明るさを変え、Linux（xkeyboard-config）は F20 をマイクのミュート、
+    /// F21 をタッチパッドの切り替えにしているので、この 4 つはほかが尽きたときだけ使う。
+    /// </summary>
+    private static readonly string[] SignalKeyOrder =
+        { "F13", "F16", "F17", "F18", "F19", "F22", "F23", "F24", "F14", "F15", "F20", "F21" };
+
     /// <summary>レイヤーの <c>bindings = &lt;</c>。<c>sensor-bindings</c> は含めない。</summary>
     internal static readonly Regex BindingsStart = new(@"(?<![\w-])bindings\s*=\s*<", RegexOptions.Compiled);
 
@@ -157,7 +165,7 @@ public static class KeymapPatcher
             SignalKeyInUse.Matches(masked).Select(m => m.Value.ToUpperInvariant()), StringComparer.Ordinal);
         used.UnionWith(handMade.Values);
 
-        var free = Enumerable.Range(13, 12).Select(n => $"F{n}").Where(k => !used.Contains(k)).ToList();
+        var free = SignalKeyOrder.Where(k => !used.Contains(k)).ToList();
         var assigned = new SortedDictionary<int, string>();
         var skipped = new SortedDictionary<int, SkippedLayer>();
         var layers = entries.Select(e => e.Layer).Distinct().OrderBy(l => l).ToList();

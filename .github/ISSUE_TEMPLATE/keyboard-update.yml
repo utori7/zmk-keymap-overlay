@@ -1,0 +1,68 @@
+name: キーボードの書き換えの結果 / Keyboard update report
+description: 初期設定の「キーボードの書き換え」（試験的）を試した結果 / How the experimental keyboard update went for you
+title: "[keyboard update] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        キーボードの書き換えは試験的な機能です。**うまくいった報告も歓迎します。** 「試験的」を外すかどうかの判断に使います。
+        アプリの「結果を報告する」「問題を報告する」から開くと、分かっている項目は最初から入っています。
+
+        Updating the keyboard is an experimental feature. **Reports that it worked are just as welcome** —
+        they decide when it stops being experimental.
+        If you opened this page from the app, the fields it knows are already filled in.
+
+  - type: dropdown
+    id: result
+    attributes:
+      label: 結果 / Result
+      options:
+        - 動いた / It works
+        - ビルドが通らない / The build fails
+        - 書き込んだが、合図が届かない / Flashed, but no signals arrive
+        - 押し心地やキーの動きが変わった / Typing or keys behave differently
+        - その他 / Something else
+    validations:
+      required: true
+
+  - type: input
+    id: keyboard
+    attributes:
+      label: キーボード / Keyboard
+      description: build.yaml の shield（例 corne）/ The shield in your build.yaml (e.g. corne)
+    validations:
+      required: true
+
+  - type: input
+    id: zmk-version
+    attributes:
+      label: ZMK の版 / ZMK version
+      description: config/west.yml の revision（例 v0.3、main）/ The revision in config/west.yml (e.g. v0.3, main)
+
+  - type: dropdown
+    id: method
+    attributes:
+      label: 書き換え方 / How you updated
+      options:
+        - GitHub の編集画面に貼り付けた / Pasted into GitHub's editor
+        - PC のファイルを書き換えた / Updated a file on my PC
+
+  - type: input
+    id: zmk-config
+    attributes:
+      label: zmk-config の URL（任意）/ zmk-config URL (optional)
+      description: 公開していれば。原因を調べるのに役立ちます / If it is public. It helps find the cause
+
+  - type: input
+    id: app-version
+    attributes:
+      label: アプリのバージョン / App version
+      description: 設定 →「全般」に出ています / Shown in Settings → General
+
+  - type: textarea
+    id: details
+    attributes:
+      label: 詳しく / Details
+      description: |
+        ビルドが通らないときは、Actions の赤い × の付いたジョブのエラーを貼ってください。
+        If the build fails, paste the error from the job with the red cross in Actions.

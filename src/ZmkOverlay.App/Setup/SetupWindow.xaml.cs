@@ -352,6 +352,8 @@ public partial class SetupWindow : Window
         FirmwareGitHub.Visibility = Visibility.Collapsed;
         FirmwareLocal.Visibility = Visibility.Collapsed;
         FirmwareDetails.Visibility = Visibility.Collapsed;
+        FirmwareExperimental.Visibility = Visibility.Collapsed;
+        FirmwareUndo.Visibility = Visibility.Collapsed;
         _patch = null;
 
         if (!config.Zmk.IsEnabled)
@@ -386,11 +388,26 @@ public partial class SetupWindow : Window
         foreach (var layer in _host.Keymap.Layers.Skip(1))
             FirmwareTable.Children.Add(Row($"L{layer.Index} {layer.Name}".TrimEnd(), LayerStatus(layer.Index)));
 
+        FirmwareExperimental.Visibility = Visibility.Visible;
         FirmwareGitHub.Visibility = needed && config.Zmk.IsGitHub ? Visibility.Visible : Visibility.Collapsed;
         FirmwareLocal.Visibility = needed && !config.Zmk.IsGitHub ? Visibility.Visible : Visibility.Collapsed;
         FirmwareDetails.Visibility = needed ? Visibility.Visible : Visibility.Collapsed;
         ChangesBox.Visibility = Visibility.Collapsed;
+
+        // このアプリの書き換えが入っていれば、取り除けるようにする。ビルドが失敗したときや、
+        // 書き込んだあとで具合が悪いときに、GitHub のキーマップまで元に戻す手段が要る。
+        var github = config.Zmk.IsGitHub;
+        FirmwareUndo.Visibility = WithoutGenerated() is not null ? Visibility.Visible : Visibility.Collapsed;
+        FirmwareUndoNote.Text = github ? UiText.FirmwareUndoGitHub : UiText.FirmwareUndoLocal;
+        UndoCopyAndOpen.Visibility = github ? Visibility.Visible : Visibility.Collapsed;
+        UndoLocal.Visibility = github ? Visibility.Collapsed : Visibility.Visible;
     }
+
+    /// <summary>今のキーマップから、このアプリの書き換えを取り除いたもの。書き換えが入っていなければ null。</summary>
+    private string? WithoutGenerated() =>
+        _patch is not null && _patchedFrom is { } text && KeymapPatcher.GeneratedBlock(text) is not null
+            ? KeymapPatcher.RemoveGenerated(text)
+            : null;
 
     private string LayerStatus(int layer)
     {
@@ -405,10 +422,11 @@ public partial class SetupWindow : Window
     }
 
     /// <summary>
-    /// GitHub の編集画面に貼る内容を作る。直前に取り直してから作るのは、利用者が GitHub 上で
+    /// GitHub の編集画面に貼る内容をコピーして、その画面を開く。直前に取り直してから作るのは、利用者が GitHub 上で
     /// 先に何か直していた場合に、古い内容で上書きしてしまわないため。
+    /// <paramref name="text"/> は取り直したあとに呼ぶ。null なら（取り直したら、もうその状態だった）何もしない。
     /// </summary>
-    private async void OnCopyAndOpen(object sender, RoutedEventArgs e)
+    private async Task CopyAndOpenEditorAsync(Func<string?> text, string done)
     {
         await RunBusyAsync(FirmwareStatus, UiText.GitHubFetching, async () =>
         {
@@ -422,11 +440,11 @@ public partial class SetupWindow : Window
             }
 
             RefreshFirmware();
-            if (_patch is not { Changed: true }) return;   // 取り直したら、もう入っていた
+            if (text() is not { } content) return;
 
             try
             {
-                Clipboard.SetText(_patch.Text);
+                Clipboard.SetText(content);
             }
             catch (System.Runtime.InteropServices.ExternalException ex)
             {
@@ -435,9 +453,15 @@ public partial class SetupWindow : Window
             }
 
             SourceActions.OpenUrl(GitHubSync.EditUrl(_host.Config.Zmk.GitHub));
-            FirmwareStatus.Text = UiText.CopiedAndOpened;
+            FirmwareStatus.Text = done;
         });
     }
+
+    private async void OnCopyAndOpen(object sender, RoutedEventArgs e) =>
+        await CopyAndOpenEditorAsync(() => _patch is { Changed: true } patch ? patch.Text : null, UiText.CopiedAndOpened);
+
+    private async void OnUndoCopyAndOpen(object sender, RoutedEventArgs e) =>
+        await CopyAndOpenEditorAsync(WithoutGenerated, UiText.UndoCopied);
 
     private void OnOpenActions(object sender, RoutedEventArgs e) =>
         SourceActions.OpenUrl(GitHubSync.ActionsUrl(_host.Config.Zmk.GitHub));
@@ -456,12 +480,23 @@ public partial class SetupWindow : Window
 
     private void OnSaveOverwrite(object sender, RoutedEventArgs e)
     {
-        if (_patch is null) return;
+        if (_patch is not null) OverwriteKeymap(_patch.Text, UiText.ConfirmOverwrite, UiText.Saved);
+    }
 
+    private void OnUndoLocal(object sender, RoutedEventArgs e)
+    {
+        if (WithoutGenerated() is { } text) OverwriteKeymap(text, UiText.ConfirmUndo, UiText.Undone);
+    }
+
+    /// <summary>
+    /// PC のキーマップを <paramref name="text"/> で置き換える。確かめてから、今のファイルを .bak に残して書く。
+    /// <paramref name="confirm"/> と <paramref name="done"/> は、ファイルとバックアップの場所から文言を作る。
+    /// </summary>
+    private void OverwriteKeymap(string text, Func<string, string> confirm, Func<string, string> done)
+    {
         var path = ConfigPaths.Resolve(_host.ConfigPath, _host.Config.Zmk.KeymapFile!);
 
-        var answer = MessageBox.Show(this, UiText.ConfirmOverwrite(path), Title,
-            MessageBoxButton.OKCancel, MessageBoxImage.Question);
+        var answer = MessageBox.Show(this, confirm(path), Title, MessageBoxButton.OKCancel, MessageBoxImage.Question);
         if (answer != MessageBoxResult.OK) return;
 
         try
@@ -478,9 +513,9 @@ public partial class SetupWindow : Window
             if (File.Exists(backup)) backup = $"{path}.{DateTime.Now:yyyyMMdd-HHmmss}.bak";
 
             File.Copy(path, backup);
-            WriteLikeOriginal(path, _patch.Text);
+            WriteLikeOriginal(path, text);
 
-            FirmwareStatus.Text = UiText.Saved(backup);
+            FirmwareStatus.Text = done(backup);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -488,7 +523,8 @@ public partial class SetupWindow : Window
             return;
         }
 
-        // 書き換えたキーマップを読み直す。合図キーが見つかるので、表示が「準備できています」に変わる。
+        // 書き換えたキーマップを読み直す。書き換えたなら合図キーが見つかって「準備できています」に、
+        // 取り除いたなら「書き換えが必要」に、表示が変わる。
         if (!_host.Reload(out var reloadError)) ShowError(reloadError);
     }
 
@@ -571,6 +607,8 @@ public partial class SetupWindow : Window
         TestList.Children.Clear();
         _testMarks.Clear();
 
+        TestReport.Visibility = KeymapHasGeneratedBlock() ? Visibility.Visible : Visibility.Collapsed;
+
         var signaled = _host.Keymap.Layers.Skip(1).Where(l => l.SignalKey is not null).ToList();
 
         if (signaled.Count == 0 || !_host.Config.LayerSync.Enabled)
@@ -587,6 +625,45 @@ public partial class SetupWindow : Window
 
             TestList.Children.Add(Row($"L{layer.Index} {layer.Name}".TrimEnd(), layer.SignalKey!, mark));
         }
+    }
+
+    /// <summary>今のキーマップに、このアプリの書き換えが入っているか。読めなければ false。</summary>
+    private bool KeymapHasGeneratedBlock()
+    {
+        var zmk = _host.Config.Zmk;
+        if (!zmk.IsEnabled) return false;
+
+        try
+        {
+            var text = File.ReadAllText(ConfigPaths.Resolve(_host.ConfigPath, zmk.KeymapFile!));
+            return KeymapPatcher.GeneratedBlock(text) is not null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 書き換えの結果を報告するページを開く。キーボード名と ZMK の版は、分かれば入力欄に入れておく。
+    /// 開くのはブラウザで、送るかどうかは開いたページで本人が決める。
+    /// </summary>
+    private void OnReport(object sender, RoutedEventArgs e)
+    {
+        var config = _host.Config;
+        string? keyboard = null;
+        string? zmkVersion = null;
+
+        if (config.Zmk.IsEnabled)
+        {
+            keyboard = ZmkShieldSync.SuggestShield(config, _host.ConfigPath);
+
+            // build.yaml が見つからないときの Revision は仮の main なので、入れない。
+            var info = ZmkShieldSource.ReadBuildInfo(ConfigPaths.Resolve(_host.ConfigPath, config.Zmk.KeymapFile!));
+            if (info.Shields.Count > 0) zmkVersion = info.Revision;
+        }
+
+        SourceActions.OpenUrl(ProjectLinks.KeyboardUpdateReport(keyboard, zmkVersion));
     }
 
     private void OnSignalReceived(int layerId)
@@ -648,7 +725,10 @@ public partial class SetupWindow : Window
     /// <summary>通信中はボタンを押せなくし、失敗したら理由を出す。</summary>
     private async Task RunBusyAsync(TextBlock status, string busyText, Func<Task> work)
     {
-        var buttons = new[] { GitHubFetch, GitHubUse, CopyAndOpen, RecheckGitHub, ShapeZmkFetch, NextButton, BackButton };
+        var buttons = new[]
+        {
+            GitHubFetch, GitHubUse, CopyAndOpen, RecheckGitHub, UndoCopyAndOpen, ShapeZmkFetch, NextButton, BackButton,
+        };
         foreach (var button in buttons) button.IsEnabled = false;
 
         status.Text = busyText;
@@ -725,6 +805,8 @@ public partial class SetupWindow : Window
             ShapeZmkFetch.Content = UiText.ZmkFetch;
 
             FirmwareTitle.Text = UiText.FirmwareTitle;
+            FirmwareBadge.Text = UiText.ExperimentalBadge;
+            FirmwareExperimental.Text = UiText.FirmwareExperimental;
             FirmwareBackup.Text = UiText.FirmwareBackup;
             FirmwareGitHubSteps.Text = UiText.FirmwareGitHubSteps;
             CopyAndOpen.Content = UiText.CopyAndOpenEditor;
@@ -735,9 +817,15 @@ public partial class SetupWindow : Window
             SaveAs.Content = UiText.SaveAs;
             ShowChanges.Content = UiText.ShowChanges;
             FirmwareFlashNote.Text = UiText.FirmwareFlashNote;
+            FirmwareUndoTitle.Text = UiText.FirmwareUndoTitle;
+            UndoCopyAndOpen.Content = UiText.UndoCopyAndOpen;
+            UndoLocal.Content = UiText.UndoLocal;
+            ReportProblem.Content = UiText.ReportProblem;
 
             TestTitle.Text = UiText.TestTitle;
             TestLead.Text = UiText.TestLead;
+            TestReportNote.Text = UiText.TestReportNote;
+            ReportResult.Content = UiText.ReportResult;
 
             DoneTitle.Text = UiText.DoneTitle;
             DoneModeTitle.Text = UiText.SectionShowWhen;

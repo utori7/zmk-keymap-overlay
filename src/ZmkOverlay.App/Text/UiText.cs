@@ -265,7 +265,7 @@ internal static class UiText
     public static string ColumnTest => T("テスト", "Test");
     public static string NoSignal => T("なし", "None");
 
-    public static string OpenFirmwareSetup => T("キーボードを書き換える…", "Update your keyboard…");
+    public static string OpenFirmwareSetup => T("キーボードを書き換える（試験的）…", "Update your keyboard (experimental)…");
 
     public static string SignalAutoNote =>
         T("キーマップに合図キーが仕込まれていれば、自動で読み取って表に入ります。ここで変えると、そのレイヤーだけ設定が優先されます。",
@@ -383,9 +383,21 @@ internal static class UiText
 
     public static string FirmwareLeadNeeded =>
         T("レイヤーに入ったことを PC に知らせるには、キーボードのファームを少し書き換える必要があります。" +
-          "書き換え済みのキーマップをアプリが用意しました。普段使わない F13〜F24 を合図に使い、ほかのアプリには届きません。",
+          "書き換え済みのキーマップをアプリが用意しました。普段使わない F13〜F24 を合図に使い、" +
+          "このアプリが動いている PC では、ほかのアプリに届きません。",
           "To tell the PC which layer you're on, your keyboard firmware needs a small change. " +
-          "The app has prepared an updated keymap. It uses the unused keys F13–F24 as signals; other apps never see them.");
+          "The app has prepared an updated keymap. It uses the unused keys F13–F24 as signals; " +
+          "on a PC running this app, other apps never see them.");
+
+    public static string ExperimentalBadge => T("試験的", "Experimental");
+
+    public static string FirmwareExperimental =>
+        T("試験的な機能です。書き換えたキーマップがビルドできることと、作者のキーボードで動くことは確かめましたが、" +
+          "ほかのキーボードではまだ確かめられていません。動いたかどうかを知らせてもらえると助かります" +
+          "（「動作確認」のステップから報告できます）。",
+          "This feature is experimental. Updated keymaps are known to build and to work on the author's keyboard, " +
+          "but haven't been tried on other keyboards yet. Please let us know whether it worked " +
+          "(you can report it from the \"Try it out\" step).");
 
     public static string FirmwareLeadUpdate =>
         T("このキーマップには、以前このアプリで入れた合図キーがあります。キーマップの変更に合わせて、その部分を更新します。",
@@ -436,13 +448,16 @@ internal static class UiText
           "  2. 編集欄をクリックして Ctrl+A（全部選択）→ Ctrl+V（貼り付け）\n" +
           "  3. 右上の「Commit changes」を押し、そのまま確定します\n" +
           "  4. ビルド状況で緑のチェックが付くまで待ち（5〜10 分）、できたファームをキーボードに書き込みます\n" +
-          "  5. 「取り直して確かめる」を押します",
+          "  5. 「取り直して確かめる」を押します\n" +
+          "赤い × になったら書き込まず、「取り直して確かめる」を押してから、下に出る「うまくいかなかったとき」に進みます。",
           "Steps:\n" +
           "  1. The button below copies the updated keymap and opens GitHub's editor\n" +
           "  2. Click in the editor, then press Ctrl+A (select all) and Ctrl+V (paste)\n" +
           "  3. Press \"Commit changes\" at the top right and confirm\n" +
           "  4. Wait for a green check in the builds (5–10 min), then flash the firmware to your keyboard\n" +
-          "  5. Press \"Fetch again and check\"");
+          "  5. Press \"Fetch again and check\"\n" +
+          "If the build gets a red cross, don't flash it. Press \"Fetch again and check\", " +
+          "then go to \"If something goes wrong\" that appears below.");
 
     public static string CopyAndOpenEditor => T("コピーして GitHub の編集画面を開く", "Copy and open GitHub's editor");
     public static string OpenActions => T("ビルド状況（Actions）を開く", "Open builds (Actions)");
@@ -453,11 +468,15 @@ internal static class UiText
 
     public static string FirmwareLocalSteps =>
         T("手順:\n" +
-          "  1. 下のボタンでキーマップを書き換えます（元のファイルは .bak として残します）\n" +
-          "  2. いつもの方法で zmk-config をビルドし、できたファームをキーボードに書き込みます",
+          "  1. 今のファームを保存しておきます（うまくいかなくても書き戻せます）\n" +
+          "  2. 下のボタンでキーマップを書き換えます（元のファイルは .bak として残します）\n" +
+          "  3. いつもの方法で zmk-config をビルドし、できたファームをキーボードに書き込みます\n" +
+          "ビルドが失敗したら書き込まず、下に出る「うまくいかなかったとき」に進みます。",
           "Steps:\n" +
-          "  1. Update the keymap with the button below (the original is kept as .bak)\n" +
-          "  2. Build your zmk-config as usual and flash the firmware to your keyboard");
+          "  1. Save your current firmware, so you can go back if needed\n" +
+          "  2. Update the keymap with the button below (the original is kept as .bak)\n" +
+          "  3. Build your zmk-config as usual and flash the firmware to your keyboard\n" +
+          "If the build fails, don't flash anything. Go to \"If something goes wrong\" that appears below.");
 
     public static string SaveOverwrite => T("キーマップを書き換える", "Update the keymap file");
     public static string SaveAs => T("別の名前で保存…", "Save as…");
@@ -485,6 +504,48 @@ internal static class UiText
           "キーボードの説明に従ってください。",
           "How to flash depends on your keyboard (for split keyboards, usually only the half that holds the keymap). " +
           "Follow your keyboard's instructions.");
+
+    public static string FirmwareUndoTitle => T("うまくいかなかったとき", "If something goes wrong");
+
+    public static string FirmwareUndoGitHub =>
+        T("ビルドが赤い × になったら、ファームは書き込まないでください。下のボタンで、書き換えを取り除いたキーマップをコピーして " +
+          "GitHub の編集画面を開きます。貼り付けて Commit すれば元に戻ります。" +
+          "書き込んだあとで具合が悪いときは、保存しておいたファームを書き戻してください。",
+          "If the build gets a red cross, don't flash it. The button below copies your keymap without the changes " +
+          "and opens GitHub's editor; paste it and commit to go back. " +
+          "If something is wrong after flashing, flash the firmware you saved before.");
+
+    public static string FirmwareUndoLocal =>
+        T("ビルドが失敗したら、ファームは書き込まないでください。下のボタンで、キーマップから書き換えを取り除けます。" +
+          "書き込んだあとで具合が悪いときは、保存しておいたファームを書き戻してください。",
+          "If the build fails, don't flash it. The button below removes the changes from your keymap file. " +
+          "If something is wrong after flashing, flash the firmware you saved before.");
+
+    public static string UndoCopyAndOpen =>
+        T("書き換えを取り除いてコピーし、編集画面を開く", "Copy without the changes and open GitHub's editor");
+
+    public static string UndoLocal => T("キーマップから書き換えを取り除く", "Remove the changes from the keymap file");
+
+    public static string ConfirmUndo(string path) =>
+        T($"{path} から、このアプリが入れた書き換えを取り除きます。今のファイルは .bak として同じフォルダに残します。よろしいですか？",
+          $"The changes this app made will be removed from {path}. The current file is kept as .bak in the same folder. Continue?");
+
+    public static string Undone(string backup) =>
+        T($"書き換えを取り除きました。取り除く前のファイルは {backup} にあります。",
+          $"The changes were removed. The file as it was before is at {backup}.");
+
+    public static string UndoCopied =>
+        T("書き換えを取り除いた内容をコピーしました。開いた画面に貼り付けて、Commit してください。",
+          "Copied without the changes. Paste it into the page that opened and commit.");
+
+    public static string ReportProblem => T("問題を報告する（GitHub）", "Report the problem (GitHub)");
+    public static string ReportResult => T("結果を報告する（GitHub）", "Report the result (GitHub)");
+
+    public static string TestReportNote =>
+        T("キーボードの書き換えは試験的な機能です。レイヤーキーを試したら、動いたかどうかを知らせてください。" +
+          "ほかの人がこの機能を使うかどうか決める手がかりになります。",
+          "Updating the keyboard is an experimental feature. After trying your layer keys, please let us know whether it worked. " +
+          "It helps others decide whether to use it.");
 
     public static string TestTitle => T("動作を確かめる", "Try it out");
 

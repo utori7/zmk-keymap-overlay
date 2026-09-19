@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -105,7 +104,7 @@ public partial class SettingsWindow : Window
             EndHotkeyCapture();
         };
 
-        VersionText.Text = Version();
+        VersionText.Text = ProjectLinks.AppVersion;
 
         _ready = true;
 
@@ -967,15 +966,5 @@ public partial class SettingsWindow : Window
         {
             ShowError(ex.Message);
         }
-    }
-
-    private static string Version()
-    {
-        var version = typeof(SettingsWindow).Assembly
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "";
-
-        // SDK はビルド時のコミットを "+abcdef" の形で後ろに付ける。画面にはいらない。
-        var plus = version.IndexOf('+');
-        return plus >= 0 ? version[..plus] : version;
     }
 }
