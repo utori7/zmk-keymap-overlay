@@ -42,6 +42,9 @@ internal static class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
+    /// <summary>ドラッグ中に「左ボタンが離された」を見るのに使う。</summary>
+    public const int VK_LBUTTON = 0x01;
+
     /// <summary>
     /// Phase 2 で「合図キーが離された」の検出に使う。低レベルフックを避けるための手段。
     /// </summary>

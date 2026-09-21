@@ -22,12 +22,32 @@ internal static class UiText
 
     public static string CannotSaveSettings => T("設定を保存できません", "Cannot save settings");
 
+    /// <summary>保存できなくても今の動作は変えたままにするので、いつ戻るのかを添える。</summary>
+    public static string SaveFailedReverts =>
+        T("いまの変更はこのまま効いていますが、次に起動すると元に戻ります。",
+          "The change stays in effect for now, but it will go back to the previous value the next time you start the app.");
+
 
     public static string CannotRegisterHotkey => T("ホットキーを登録できません", "Cannot register the hotkey");
     public static string UnknownCause => T("原因不明", "Unknown cause");
     public static string LayersNotFollowed => T("追従できないレイヤーがあります", "Some layers cannot be followed");
 
     public static string KeymapNotLoaded => T("キーマップを読み込めませんでした", "Could not load your keymap");
+
+    /// <summary>
+    /// 初期設定を「完了」以外で閉じた人向け。既定の見せ方では画面に何も出ず、タスクバーにも出ないので、
+    /// トレイにいることを一度だけ知らせる。<see cref="DoneLead"/> と同じ内容を、バルーンに収まる長さで。
+    /// </summary>
+    public static string StillRunning => T("トレイで動いています", "Running in the tray");
+
+    /// <summary>
+    /// Windows のトーストは日本語の本文を 4 行ほどで切るので、収まる長さにしてある
+    /// （切れると最後の一文が読めない）。足すときは実機で確かめること。
+    /// </summary>
+    public static string StillRunningBody(string toggleHotkey) =>
+        T($"トレイのアイコン（画面右下、または「^」の中）から、初期設定を続けられます。{toggleHotkey} で表示の切り替え。",
+          $"Continue setup from the tray icon (bottom right, or under \"^\"). " +
+          $"{toggleHotkey} turns the overlay on and off.");
 
     public static string StartupFellBack(string reason) =>
         T($"キーマップを読み込めなかったので、サンプルを表示しています（{reason}）。キーマップの場所を選び直してください。",
@@ -41,6 +61,22 @@ internal static class UiText
 
     public static string ZmkFetchProblem => T("キーの並びを取得できませんでした", "Could not get the key positions");
 
+    /// <summary>
+    /// 次の 2 つは、生の例外メッセージだけでは何をすればよいか分からない失敗に添える。
+    /// 原因はほぼ「ほかのアプリが開いている」か「書き込みが許可されていない」のどちらかなので、両方を挙げる。
+    /// </summary>
+    public static string CannotWriteFile(string path, string reason) =>
+        T($"{path} に書き込めませんでした（{reason}）。そのファイルをほかのアプリで開いていないか、" +
+          "フォルダへの書き込みが許可されているかを確かめてください。",
+          $"Could not write to {path} ({reason}). Check that the file is not open in another app, " +
+          "and that you are allowed to write to the folder.");
+
+    public static string CannotUseClipboard(string reason) =>
+        T($"クリップボードにコピーできませんでした（{reason}）。ほかのアプリがクリップボードを使っていることがあります。" +
+          "少し待ってから、もう一度押してください。",
+          $"Could not copy to the clipboard ({reason}). Another app may be using it. " +
+          "Wait a moment and press the button again.");
+
     // ---- トレイ ----
 
     public static string Disable => T("無効にする", "Disable");
@@ -51,10 +87,23 @@ internal static class UiText
     public static string ModeLayersOnlyTip =>
         T("普段は出さず、レイヤーキーを押しているあいだだけ表示します。",
           "Hidden normally; shown while a layer key is held.");
+    public static string ModeSelected => T("選んだレイヤーのときだけ表示", "Show only on the layers I choose");
+    public static string ModeSelectedTip =>
+        T("チェックを付けたレイヤーにいるあいだだけ表示します。使い慣れたレイヤーは外しておくと、そのレイヤーでは出ません。",
+          "Shown only while you're on a checked layer. Uncheck the layers you already know, so it stays out of your way there.");
     public static string ModeAlways => T("常に表示", "Always show");
     public static string ModeAlwaysTip =>
         T("有効なあいだ出しっぱなしにし、レイヤーに応じて中身を切り替えます。",
           "Stays on screen while enabled and follows the active layer.");
+
+    /// <summary>
+    /// チェック = 触れる、と読める向きで書く。「クリックスルー」を項目名にすると、
+    /// チェックがどちらの状態を指すのか読み取れない。
+    /// </summary>
+    public static string Clickable => T("オーバーレイを操作する", "Let me use the overlay");
+    public static string ClickableTip =>
+        T("タブをクリックしてレイヤーを選び、ドラッグで好きな位置へ動かせます。外すとクリックは下のアプリに素通しします。",
+          "Click a tab to pick a layer, and drag the overlay where you want it. Unchecked, clicks pass through to the app underneath.");
 
     public static string RunAtLogin => T("Windows のサインイン時に起動する", "Start when I sign in to Windows");
     public static string RunAtLoginTip =>
@@ -110,8 +159,11 @@ internal static class UiText
 
     public static string HintToggle(string toggleHotkey) => T($"{toggleHotkey} オフ", $"{toggleHotkey} off");
 
-    /// <summary><paramref name="range"/> は "0–5" のようなレイヤー番号の範囲。</summary>
-    public static string HintLayers(string range) => T($"Ctrl+Alt+{range} レイヤー", $"Ctrl+Alt+{range} layers");
+    /// <summary>
+    /// <paramref name="keys"/> は "Ctrl+Alt+0–5"（既定）や "Ctrl+Alt+Q W E R"（割り当てを変えたとき）の形。
+    /// 修飾キーを決め打ちにしないのは、利用者が選んだ組み合わせも出せるようにするため。
+    /// </summary>
+    public static string HintLayers(string keys) => T($"{keys} レイヤー", $"{keys} layers");
 
     public static string Combos => T("コンボ", "Combos");
 
@@ -121,7 +173,7 @@ internal static class UiText
 
     public static string PageKeyboard => T("キーボード", "Keyboard");
     public static string PageDisplay => T("表示", "Display");
-    public static string PageSync => T("レイヤー追従", "Layer sync");
+    public static string PageLayers => T("レイヤー", "Layers");
     public static string PageShortcuts => T("ショートカット", "Shortcuts");
     public static string PageGeneral => T("全般", "General");
 
@@ -142,6 +194,9 @@ internal static class UiText
 
     public static string GitHubFetch => T("取得", "Fetch");
     public static string GitHubFetching => T("GitHub から取得しています…", "Fetching from GitHub…");
+
+    /// <summary>失敗するときは通信のタイムアウト（30 秒）まで黙るので、待つ長さを先に伝える。</summary>
+    public static string MayTakeAWhile => T("（最大 30 秒ほどかかります）", " (this can take up to 30 seconds)");
     public static string GitHubKeymapLabel => T("使うキーマップ", "Keymap to use");
     public static string GitHubUse => T("これを使う", "Use this");
     public static string GitHubRefresh => T("取り直す", "Fetch again");
@@ -159,6 +214,7 @@ internal static class UiText
 
     public static string GitHubRefreshFailed =>
         T("GitHub から取り直せませんでした。保存済みのファイルで続けます", "Could not fetch from GitHub. Continuing with the saved files");
+    public static string SectionPhysicalLayout => T("キーの並び（物理レイアウト）", "Key positions (physical layout)");
     public static string KeymapFileLabel => T("キーマップ", "Keymap");
     public static string LayoutFileLabel => T("物理レイアウト", "Physical layout");
     public static string Browse => T("選ぶ…", "Browse…");
@@ -224,14 +280,55 @@ internal static class UiText
         T("キーボードが送るキーは同じでも、PC の配列設定によって出る記号が変わります。Windows の設定に合わせてください。",
           "The same key can type different symbols depending on this PC's layout. Match your Windows setting.");
 
-    public static string SectionLayerNames => T("レイヤー名", "Layer names");
-    public static string LayerNamesNote => T("空にすると、キーマップに書かれた名前に戻ります。", "Leave empty to use the name from the keymap.");
     public static string SampleCannotChange => T("サンプルのキーマップでは変更できません。", "Cannot be changed for the sample keymap.");
 
     public static string SectionWarnings => T("読み込みの警告", "Loading warnings");
     public static string NoWarnings => T("警告はありません。", "No warnings.");
 
     // 表示
+    public static string SectionStatus => T("いまの状態", "Right now");
+
+    /// <summary>
+    /// 有効 / 無効・見せ方・追従の 3 つを 1 行にまとめる。出ないのが正常な設定（L1 以上のときだけ）があるので、
+    /// 「壊れている」と「そういう設定」を画面の上で区別できるようにするため。
+    /// </summary>
+    public static string StatusLine(string state, string mode, string follow) =>
+        T($"{state}・{mode}・{follow}", $"{state} · {mode} · {follow}");
+
+    /// <summary>
+    /// レイヤー番号の並び。区切りは言語に合わせる（<see cref="FirmwareConditional"/> と同じ扱い）。
+    /// </summary>
+    public static string LayerList(IEnumerable<int> layers)
+    {
+        var names = layers.Select(i => $"L{i}").ToList();
+        return T(string.Join("・", names), string.Join(", ", names));
+    }
+
+    public static string StatusFollowing(string layers) =>
+        T($"キーボードのレイヤーに追従（{layers}）", $"following the keyboard\u2019s layers ({layers})");
+
+    public static string StatusFollowingNothing =>
+        T("追従できるレイヤーがありません", "no layer can be followed");
+
+    public static string StatusNotFollowing =>
+        T("キーボードのレイヤーには追従しません", "not following the keyboard\u2019s layers");
+
+    // 次の 3 つは、そのままでは出ようがない組み合わせのときだけ出す。直し方まで書く。
+
+    public static string StatusWhyDisabled(string toggleHotkey) =>
+        T($"無効のあいだは、何をしても表示されません。{toggleHotkey} か、トレイのアイコンから有効にできます。",
+          $"While it is disabled, nothing is shown at all. Turn it on with {toggleHotkey} or from the tray icon.");
+
+    public static string StatusWhyNoShownLayers =>
+        T("表示するレイヤーが 1 つも選ばれていないので、表示されません。下のチェックを付けてください。",
+          "No layer is chosen, so nothing is shown. Check the layers below.");
+
+    public static string StatusWhyNoTrigger =>
+        T("キーボードのレイヤーに追従せず、レイヤーを表示するショートカットもありません。" +
+          "「レイヤー」で追従を入れるか、「ショートカット」で組み合わせを割り当ててください。",
+          "The overlay does not follow the keyboard\u2019s layers, and no shortcut shows a layer. " +
+          "Turn on following in \"Layers\", or assign a combination in \"Shortcuts\".");
+
     public static string SectionShowWhen => T("表示するとき", "When to show");
     public static string SectionLook => T("見た目", "Appearance");
     public static string SizeLabel => T("大きさ", "Size");
@@ -239,6 +336,40 @@ internal static class UiText
     public static string PositionLabel => T("位置", "Position");
     public static string MarginLabel => T("画面端からの余白", "Distance from the screen edge");
     public static string SectionPreview => T("プレビュー", "Preview");
+
+    public static string SectionClickable => T("オーバーレイの操作", "Using the overlay");
+
+    public static string ClickableNote =>
+        T("オーバーレイがマウスを受け取るようになります。上端のタブをクリックするとそのレイヤーを表示し、" +
+          "もう一度押すと元に戻ります。板のどこかをつかんで動かせば、好きな位置に置けます。" +
+          "入力中のアプリからフォーカスは移りませんが、板が重なっている場所は下のアプリを押せなくなります。",
+          "The overlay starts receiving the mouse. Click a tab along the top to show that layer, and click it again to go back. " +
+          "Drag the overlay anywhere to place it where you like. It never takes focus from the app you are typing in, " +
+          "but you can no longer click whatever it covers.");
+
+    /// <summary>ドラッグで動かしたあとだけ出す。同じ位置を選び直しても戻せないので、専用の入口が要る。</summary>
+    public static string ResetOffset => T("ドラッグした位置を捨てる", "Forget where I dragged it");
+    public static string ResetOffsetNote =>
+        T("ドラッグで動かしてあります。押すと「位置」で選んだ場所に戻ります。",
+          "You have dragged the overlay. This puts it back where \"Position\" says.");
+
+    /// <summary>「画面の中央」では <c>margin</c> を使わない（<see cref="Core.Config.AppConfig.Margin"/>）。</summary>
+    public static string MarginUnusedAtCenter =>
+        T("「画面の中央」では余白を使いません。", "The margin is not used when the position is the center of the screen.");
+
+    /// <summary>設定ファイルを手で書き換えて、この画面で選べる範囲の外の値になっているとき。</summary>
+    public static string ValueOutOfRange(double value) =>
+        T($"設定ファイルの値は {value:0} で、この画面で選べる範囲の外です。ここで動かすと、範囲内の値に変わります。",
+          $"The settings file says {value:0}, which is outside the range this screen offers. " +
+          "Moving the slider changes it to a value in range.");
+
+    // 次の 2 つはレイヤー名のすぐ後ろに続ける。全角の括弧はそれ自体に余白があるので、英語だけ空白を前に置く。
+
+    /// <summary>「選んだレイヤーのときだけ表示」の L0 に添える。L0 に付けると、何も押していないときも出る。</summary>
+    public static string BaseLayerSuffix => T("（何も押していないとき）", " (when no layer key is held)");
+
+    /// <summary>合図キーが無く、キーボードを操作しても自動では出ないレイヤーに添える。</summary>
+    public static string NoSignalSuffix => T("（合図キーなし）", " (no signal key)");
 
     public static string PositionName(string position) => position switch
     {
@@ -259,17 +390,23 @@ internal static class UiText
     public static string SyncEnabled => T("キーボードのレイヤーに追従する", "Follow the keyboard's layers");
     public static string SyncHold => T("キーを押しているあいだだけ表示", "Show while the key is held");
     public static string SyncToggle => T("押すたびに表示と非表示を切り替える", "Toggle on each press");
-    public static string SectionSignalKeys => T("合図キー", "Signal keys");
+    public static string SectionLayerTable => T("レイヤーの一覧", "Layers");
     public static string ColumnLayer => T("レイヤー", "Layer");
+    public static string ColumnName => T("名前", "Name");
     public static string ColumnSignal => T("合図キー", "Signal key");
     public static string ColumnTest => T("テスト", "Test");
     public static string NoSignal => T("なし", "None");
 
     public static string OpenFirmwareSetup => T("キーボードを書き換える（試験的）…", "Update your keyboard (experimental)…");
 
-    public static string SignalAutoNote =>
-        T("キーマップに合図キーが仕込まれていれば、自動で読み取って表に入ります。ここで変えると、そのレイヤーだけ設定が優先されます。",
-          "Signal keys built into your keymap are detected and filled in automatically. Changing one here overrides it for that layer.");
+    public static string LayerTableNote =>
+        T("名前は、空にするとキーマップに書かれた名前に戻ります。合図キーは、キーマップに仕込まれていれば自動で読み取って表に入ります。" +
+          "ここで変えると、そのレイヤーだけ設定が優先されます。",
+          "Leave a name empty to use the one in your keymap. Signal keys built into your keymap are detected and filled in automatically; " +
+          "changing one here overrides it for that layer.");
+
+    public static string BaseHasNoSignal =>
+        T("ベースのレイヤー（何も押していない状態）には合図キーは要りません。", "The base layer (no layer key held) needs no signal key.");
 
     public static string DetectedFromKeymap(string key) =>
         T($"キーマップから読み取った値: {key}", $"Detected in the keymap: {key}");
@@ -281,9 +418,18 @@ internal static class UiText
     // ショートカット
     public static string ToggleHotkeyLabel => T("オーバーレイの有効 / 無効", "Enable / disable the overlay");
 
+    /// <summary>入力欄のラベルと、衝突を知らせるときの呼び名を兼ねる。</summary>
+    public static string ClickThroughHotkeyLabel => T("オーバーレイの操作", "Using the overlay");
+
+    public static string ClickThroughHotkeyNote =>
+        T("クリックとドラッグを受け取るかどうかを切り替えます。既定では割り当てていません。",
+          "Switches whether the overlay takes clicks and drags. Nothing is assigned by default.");
+
     public static string HotkeyHint =>
-        T("欄をクリックしてから、使いたい組み合わせを押してください。Esc で取り消し、レイヤーの欄は Delete で割り当てを外します。",
-          "Click a box, then press the combination you want. Esc cancels; Delete removes a layer's shortcut.");
+        T("欄をクリックしてから、使いたい組み合わせを押してください。Esc で取り消し、" +
+          "「オーバーレイの有効 / 無効」以外の欄は Delete で割り当てを外します。",
+          "Click a box, then press the combination you want. Esc cancels; " +
+          "Delete removes a shortcut from any box but \"Enable / disable the overlay\".");
 
     public static string PressKeys => T("組み合わせを押してください…", "Press a combination…");
     public static string NeedModifier => T("Ctrl・Alt・Shift・Win のどれかと一緒に押してください", "Hold Ctrl, Alt, Shift or Win with the key");
@@ -311,6 +457,11 @@ internal static class UiText
     public static string LanguageLabel => T("表示言語", "Language");
     public static string LanguageAuto => T("自動（Windows に合わせる）", "Automatic (follow Windows)");
     public static string SectionAbout => T("このアプリについて", "About");
+
+    // 画面に出ていない設定（layerSync.pollIntervalMs / graceMs、zmk.labelOverrides など）があるので、
+    // 一覧への入口を画面に置く。表示言語に合わせた版を開く。
+    public static string OpenReadme => T("使い方（README）を開く", "Open the guide (README)");
+    public static string OpenConfigDoc => T("設定ファイルの項目一覧を開く", "Open the settings-file reference");
     public static string ConfigFileLabel => T("設定ファイル", "Settings file");
     public static string OpenFolder => T("フォルダを開く", "Open folder");
     public static string VersionLabel => T("バージョン", "Version");
@@ -319,6 +470,9 @@ internal static class UiText
 
     public static string SetupTitle => T("はじめての設定", "Setup");
     public static string SetupMenu => T("初期設定をやり直す…", "Run setup again…");
+
+    /// <summary>途中で閉じた人向け。「やり直す」だと、そこまでの設定が消えると読める。</summary>
+    public static string SetupMenuContinue => T("初期設定を続ける…", "Continue setup…");
     public static string SetupStepOf(int step, int total) => T($"ステップ {step} / {total}", $"Step {step} of {total}");
     public static string SetupNext => T("次へ", "Next");
     public static string SetupBack => T("戻る", "Back");
@@ -335,15 +489,17 @@ internal static class UiText
 
     public static string WelcomeSteps =>
         T("これから次の順に準備します（5 分ほど。キーボードを書き換える場合は、ビルドを待つ時間が加わります）。\n" +
-          "  1. キーマップの場所を教える\n" +
-          "  2. キーボードの形を確かめる\n" +
-          "  3. キーボードがレイヤーの合図を送るようにする\n" +
-          "  4. 動作を確かめる",
+          "  ・キーマップの場所を教える\n" +
+          "  ・キーボードの形を確かめる\n" +
+          "  ・キーボードがレイヤーの合図を送るようにする\n" +
+          "  ・動作を確かめる\n" +
+          "途中で閉じても、そこまでの設定は残ります。トレイのアイコンから、いつでも続けられます。",
           "We'll get ready in this order (about 5 minutes, plus build time if you update your keyboard):\n" +
-          "  1. Tell the app where your keymap is\n" +
-          "  2. Check the shape of your keyboard\n" +
-          "  3. Make your keyboard send layer signals\n" +
-          "  4. Try it out");
+          "  · Tell the app where your keymap is\n" +
+          "  · Check the shape of your keyboard\n" +
+          "  · Make your keyboard send layer signals\n" +
+          "  · Try it out\n" +
+          "If you close this window early, what you set so far is kept. You can continue any time from the tray icon.");
 
     public static string SourceTitle => T("キーマップはどこにありますか？", "Where is your keymap?");
     public static string SourceLead => T("ZMK の設定（zmk-config）がある場所を選んでください。", "Choose where your ZMK configuration (zmk-config) is.");
@@ -547,6 +703,25 @@ internal static class UiText
           "Updating the keyboard is an experimental feature. After trying your layer keys, please let us know whether it worked. " +
           "It helps others decide whether to use it.");
 
+    /// <summary>✓ は足すだけで消えないので、いつからの話なのかを書いておく。</summary>
+    public static string TestMarkNote =>
+        T("✓ は、この画面を開いてから合図が届いたことを表します。",
+          "A \u2713 means the signal has arrived since this window was opened.");
+
+    /// <summary>
+    /// 合図が 1 つも届かないときだけ出す。ここは案内の最後で、直前がいちばん失敗しやすい書き込みなので、
+    /// 「—」が並んだままだと次の一手が無くなる。キーボードの接続はアプリから見えないため、確かめる順に挙げる。
+    /// </summary>
+    public static string TestNoSignalYet =>
+        T("まだ合図が届いていません。次の順に確かめてください。\n" +
+          "  ・キーボードが PC に繋がっているか（分割キーボードでは、キーマップを持つ側）\n" +
+          "  ・書き換えたファームを、キーボードに書き込んだか\n" +
+          "  ・書き込んだあとなら、トレイの「キーマップを再読み込み」を試す",
+          "No signal has arrived yet. Please check, in this order:\n" +
+          "  · your keyboard is connected (for a split keyboard, the half that holds the keymap)\n" +
+          "  · you flashed the updated firmware to your keyboard\n" +
+          "  · if you did, try \"Reload keymap\" in the tray");
+
     public static string TestTitle => T("動作を確かめる", "Try it out");
 
     public static string TestLead =>
@@ -560,6 +735,14 @@ internal static class UiText
           "Until then, show layers with shortcuts or from the tray menu.");
 
     public static string DoneTitle => T("準備ができました", "You're all set");
+
+    /// <summary>何も選ばずに「次へ」で来られるので、サンプルのままなら完了の画面でも伝える。</summary>
+    public static string DoneStillSample =>
+        T("いまはサンプルの Corne を表示しています。自分のキーマップは、設定の「キーボード」でいつでも選べます。",
+          "You are still looking at the sample Corne. You can choose your own keymap any time in Settings \u2192 Keyboard.");
+
+    public static string DoneSelectedNote =>
+        T("表示するレイヤーは、設定の「表示」で選べます。", "Choose the layers in Settings → Display.");
 
     public static string DoneLead(string toggleHotkey) =>
         T($"オーバーレイは、画面右下のトレイにあるアイコンから操作できます（見当たらなければ、タスクバーの「^」の中にあります）。" +

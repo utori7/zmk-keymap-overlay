@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using ZmkOverlay.App.Render;
 using ZmkOverlay.App.Settings;
 using ZmkOverlay.App.Text;
@@ -52,6 +53,21 @@ public partial class SetupWindow : Window
     private readonly HashSet<int> _received = new();
     private readonly Dictionary<int, TextBlock> _testMarks = new();
 
+    /// <summary>
+    /// 動作確認で、しばらく待っても合図が届かないときに手がかりを出すための間。
+    /// 入った直後に出すと、まだ何も押していない人を驚かせるだけなので待つ。
+    /// </summary>
+    private readonly DispatcherTimer _noSignal;
+
+    /// <summary>「完了」まで見たか。見ずに閉じた人には、トレイにいることを知らせる。</summary>
+    public bool ReachedDone { get; private set; }
+
+    /// <summary>
+    /// 画面を書き出すだけのとき（--render-setup）に立てる。全ステップを順に出すので、
+    /// 立てないと最後のステップを見た扱いになって利用者の設定ファイルを書き換えてしまう。
+    /// </summary>
+    internal bool RenderOnly { get; set; }
+
     private SetupStep _step;
     private UiLanguage? _textsLanguage;
     private bool _ready;
@@ -67,11 +83,29 @@ public partial class SetupWindow : Window
         _host.Applied += OnApplied;
         _host.SignalReceived += OnSignalReceived;
 
+        _noSignal = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+        _noSignal.Tick += (_, _) =>
+        {
+            _noSignal.Stop();
+            if (_step == SetupStep.Test && _received.Count == 0) TestNoSignal.Visibility = Visibility.Visible;
+        };
+
         Closed += (_, _) =>
         {
+            // 先に外してから覚える。覚えると反映が走り、閉じたウィンドウを作り直すことになる。
             _host.Applied -= OnApplied;
             _host.SignalReceived -= OnSignalReceived;
+            _noSignal.Stop();
+            RememberStep();
         };
+
+        // 150% 拡大のノートなどで作業領域に収まらないと、下端の「次へ」が画面の外に出る。
+        // ScrollViewer が送るのは中身だけなので、ボタンの行はスクロールしても戻ってこない。
+        var work = SystemParameters.WorkArea;
+        MinHeight = Math.Min(MinHeight, work.Height);
+        MinWidth = Math.Min(MinWidth, work.Width);
+        Height = Math.Min(Height, work.Height);
+        Width = Math.Min(Width, work.Width);
 
         _ready = true;
 
@@ -86,20 +120,27 @@ public partial class SetupWindow : Window
         for (var i = 0; i < _pages.Length; i++)
             _pages[i].Visibility = i == (int)step ? Visibility.Visible : Visibility.Collapsed;
 
+        if (step == SetupStep.Done) ReachedDone = true;
+
         StepText.Text = UiText.SetupStepOf((int)step + 1, _pages.Length);
         BackButton.Visibility = step == SetupStep.Welcome ? Visibility.Hidden : Visibility.Visible;
         NextButton.Content = step == SetupStep.Done ? UiText.SetupFinish : UiText.SetupNext;
         LaterButton.Visibility = step == SetupStep.Done ? Visibility.Hidden : Visibility.Visible;
 
         ShowError(null);
+        ShowNotice(null);
         RefreshStep();
     }
 
     /// <summary>
     /// いまのステップの下に知らせを出す（キーマップを読めずにサンプルで起動した、など）。
-    /// ステップを移ると消える。
+    /// ステップを移ると消える。失敗ではないので、赤ではなく普通の色で出す。
     /// </summary>
-    public void ShowNotice(string message) => ShowError(message);
+    public void ShowNotice(string? message)
+    {
+        NoticeText.Text = message ?? "";
+        NoticeText.Visibility = string.IsNullOrEmpty(message) ? Visibility.Collapsed : Visibility.Visible;
+    }
 
     // ---- 共通 ----
 
@@ -116,6 +157,22 @@ public partial class SetupWindow : Window
 
     /// <summary>途中でやめても、そこまでの設定は反映・保存済み。続きはトレイからいつでも開ける。</summary>
     private void OnLater(object sender, RoutedEventArgs e) => Close();
+
+    /// <summary>
+    /// 次にトレイから開いたとき、どのステップから始めるかを覚える。
+    /// 「完了」まで見たか、ようこそで閉じたなら覚えない（続きが無いので「やり直す」のままでよい）。
+    /// </summary>
+    private void RememberStep()
+    {
+        if (RenderOnly) return;
+
+        var step = ReachedDone || _step == SetupStep.Welcome ? (int?)null : (int)_step;
+        if (_host.Config.SetupStep == step) return;
+
+        var next = _host.Config.Clone();
+        next.SetupStep = step;
+        _host.TryApply(next, out _);
+    }
 
     private bool Apply(Action<AppConfig> change)
     {
@@ -177,8 +234,11 @@ public partial class SetupWindow : Window
 
                 case SetupStep.Done:
                     DoneLead.Text = UiText.DoneLead(_host.Config.ToggleHotkey.ToString());
-                    DoneLayersOnly.IsChecked = !_host.Config.IsAlwaysVisible;
-                    DoneAlways.IsChecked = _host.Config.IsAlwaysVisible;
+                    DoneSampleNote.Visibility = _host.Config.Zmk.IsEnabled ? Visibility.Collapsed : Visibility.Visible;
+                    var mode = _host.Config.EffectiveDisplayMode;
+                    DoneLayersOnly.IsChecked = mode == DisplayModes.LayersOnly;
+                    DoneSelected.IsChecked = mode == DisplayModes.SelectedLayers;
+                    DoneAlways.IsChecked = mode == DisplayModes.Always;
                     DoneRunAtLogin.IsChecked = _host.RunAtLogin;
                     break;
             }
@@ -369,8 +429,12 @@ public partial class SetupWindow : Window
             _patchedFrom = File.ReadAllText(keymapPath);
             _patch = KeymapPatcher.Patch(_patchedFrom, keymapPath);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
-                                       or InvalidDataException or DtsParseException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ShowError(UiText.CannotWriteFile(keymapPath, ex.Message));
+            return;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or DtsParseException)
         {
             ShowError(ex.Message);
             return;
@@ -448,7 +512,7 @@ public partial class SetupWindow : Window
             }
             catch (System.Runtime.InteropServices.ExternalException ex)
             {
-                ShowError(ex.Message);
+                ShowError(UiText.CannotUseClipboard(ex.Message));
                 return;
             }
 
@@ -519,7 +583,7 @@ public partial class SetupWindow : Window
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            ShowError(ex.Message);
+            ShowError(UiText.CannotWriteFile(path, ex.Message));
             return;
         }
 
@@ -558,7 +622,7 @@ public partial class SetupWindow : Window
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            ShowError(ex.Message);
+            ShowError(UiText.CannotWriteFile(dialog.FileName, ex.Message));
         }
     }
 
@@ -607,6 +671,9 @@ public partial class SetupWindow : Window
         TestList.Children.Clear();
         _testMarks.Clear();
 
+        _noSignal.Stop();
+        TestNoSignal.Visibility = Visibility.Collapsed;
+
         TestReport.Visibility = KeymapHasGeneratedBlock() ? Visibility.Visible : Visibility.Collapsed;
 
         var signaled = _host.Keymap.Layers.Skip(1).Where(l => l.SignalKey is not null).ToList();
@@ -614,8 +681,14 @@ public partial class SetupWindow : Window
         if (signaled.Count == 0 || !_host.Config.LayerSync.Enabled)
         {
             TestList.Children.Add(new TextBlock { Text = UiText.TestNothing, TextWrapping = TextWrapping.Wrap });
+            TestMarkNote.Visibility = Visibility.Collapsed;
             return;
         }
+
+        TestMarkNote.Visibility = Visibility.Visible;
+
+        // 試せる状態なのに一つも届いていないなら、しばらく待ってから確かめる順を出す。
+        if (_received.Count == 0) _noSignal.Start();
 
         foreach (var layer in signaled)
         {
@@ -670,6 +743,10 @@ public partial class SetupWindow : Window
     {
         _received.Add(layerId);
         if (_testMarks.TryGetValue(layerId, out var mark)) SetMark(mark, true);
+
+        // 一つでも届いたなら、確かめる順は要らない。
+        _noSignal.Stop();
+        TestNoSignal.Visibility = Visibility.Collapsed;
     }
 
     private static void SetMark(TextBlock mark, bool received)
@@ -685,8 +762,11 @@ public partial class SetupWindow : Window
 
     private void OnModeChecked(object sender, RoutedEventArgs e)
     {
-        var always = DoneAlways.IsChecked == true;
-        Apply(config => config.DisplayMode = always ? "always" : "layersOnly");
+        var mode = sender == DoneAlways ? DisplayModes.Always
+            : sender == DoneSelected ? DisplayModes.SelectedLayers
+            : DisplayModes.LayersOnly;
+
+        Apply(config => config.DisplayMode = mode);
     }
 
     private void OnRunAtLoginClick(object sender, RoutedEventArgs e)
@@ -722,16 +802,28 @@ public partial class SetupWindow : Window
         return row;
     }
 
-    /// <summary>通信中はボタンを押せなくし、失敗したら理由を出す。</summary>
+    /// <summary>
+    /// 通信中はボタンを押せなくし、失敗したら理由を出す。
+    ///
+    /// 失敗するときは通信のタイムアウト（30 秒）まで黙るので、待つ長さを書き、
+    /// 動いていることが分かる帯を出す。「あとで」も押せなくする（押し間違いで待ち時間を捨てないため）。
+    ///
+    /// ウィンドウを閉じるのは止めない。「終了」も <see cref="Window.Close"/> を通るので、
+    /// 止めると通信のあいだアプリが終われなくなる。閉じたあとに続きが走っても、
+    /// 設定は反映・保存され、画面に書く分が無駄になるだけ。
+    /// </summary>
     private async Task RunBusyAsync(TextBlock status, string busyText, Func<Task> work)
     {
         var buttons = new[]
         {
-            GitHubFetch, GitHubUse, CopyAndOpen, RecheckGitHub, UndoCopyAndOpen, ShapeZmkFetch, NextButton, BackButton,
+            GitHubFetch, GitHubUse, CopyAndOpen, RecheckGitHub, UndoCopyAndOpen, ShapeZmkFetch,
+            NextButton, BackButton, LaterButton,
         };
         foreach (var button in buttons) button.IsEnabled = false;
 
-        status.Text = busyText;
+        var waiting = busyText + UiText.MayTakeAWhile;
+        status.Text = waiting;
+        BusyBar.Visibility = Visibility.Visible;
         ShowError(null);
 
         try
@@ -744,8 +836,9 @@ public partial class SetupWindow : Window
         }
         finally
         {
+            BusyBar.Visibility = Visibility.Collapsed;
             foreach (var button in buttons) button.IsEnabled = true;
-            if (status.Text == busyText) status.Text = "";
+            if (status.Text == waiting) status.Text = "";
         }
     }
 
@@ -824,13 +917,18 @@ public partial class SetupWindow : Window
 
             TestTitle.Text = UiText.TestTitle;
             TestLead.Text = UiText.TestLead;
+            TestMarkNote.Text = UiText.TestMarkNote;
+            TestNoSignalText.Text = UiText.TestNoSignalYet;
             TestReportNote.Text = UiText.TestReportNote;
             ReportResult.Content = UiText.ReportResult;
 
             DoneTitle.Text = UiText.DoneTitle;
+            DoneSampleNote.Text = UiText.DoneStillSample;
             DoneModeTitle.Text = UiText.SectionShowWhen;
             DoneLayersOnly.Content = UiText.ModeLayersOnly;
             DoneLayersOnlyNote.Text = UiText.ModeLayersOnlyTip;
+            DoneSelected.Content = UiText.ModeSelected;
+            DoneSelectedNote.Text = UiText.ModeSelectedTip + " " + UiText.DoneSelectedNote;
             DoneAlways.Content = UiText.ModeAlways;
             DoneAlwaysNote.Text = UiText.ModeAlwaysTip;
             DoneRunAtLogin.Content = UiText.RunAtLogin;

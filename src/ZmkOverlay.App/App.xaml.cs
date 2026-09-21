@@ -40,6 +40,7 @@ public partial class App : Application, ISettingsHost
     private SetupWindow? _setup;
 
     private IDisposable? _toggleRegistration;
+    private IDisposable? _clickThroughRegistration;
     private readonly List<IDisposable> _layerRegistrations = new();
 
     /// <summary>ショートカットの入力中などで、ホットキーを外している数。0 のときだけ登録する。</summary>
@@ -59,6 +60,7 @@ public partial class App : Application, ISettingsHost
 
     // 設定画面で値を動かすたびに作り直すので、同じ失敗は繰り返し知らせない。
     private string? _toggleFailureNotified;
+    private string? _clickThroughFailureNotified;
     private string _syncFailuresNotified = "";
     private string _layerFailuresNotified = "";
 
@@ -159,7 +161,7 @@ public partial class App : Application, ISettingsHost
         if (_overlay is null) return;
 
         if (_setup is not null) OpenSetup(null);
-        else OpenSettings(SettingsPage.Keyboard);
+        else OpenSettings(null);
     }
 
     /// <summary>
@@ -220,7 +222,8 @@ public partial class App : Application, ISettingsHost
         }
         else
         {
-            var setup = new SetupWindow(this);
+            // 全ステップを順に出すだけなので、再開位置は覚えない（利用者の設定ファイルを書き換えないため）。
+            var setup = new SetupWindow(this) { RenderOnly = true };
             RenderPages<SetupStep>(setup, setup.ShowStep, "setup", outputDir);
         }
 
@@ -320,17 +323,21 @@ public partial class App : Application, ISettingsHost
 
         _hotKeys = new HotKeyService();
         _overlay = new OverlayController(config, _layout, _keymap);
+        _overlay.LayerTabClicked += OnLayerTabClicked;
+        _overlay.Dragged += OnOverlayDragged;
 
         _tray = new TrayIcon(
             toggle: ToggleOverlay,
             showLayer: ShowLayerByHand,
-            openSettings: () => OpenSettings(SettingsPage.Keyboard),
-            openSetup: () => OpenSetup(SetupStep.Welcome),
+            openSettings: () => OpenSettings(null),
+            openSetup: () => OpenSetup(ResumeSetupStep()),
             reload: Reload,
             exit: () => Shutdown(),
-            alwaysVisible: config.IsAlwaysVisible,
-            setAlwaysVisible: SetAlwaysVisible,
-            showWarnings: () => OpenSettings(SettingsPage.Keyboard));
+            displayMode: config.EffectiveDisplayMode,
+            setDisplayMode: SetDisplayMode,
+            showWarnings: () => OpenSettings(SettingsPage.Keyboard),
+            clickThrough: config.ClickThrough,
+            setClickThrough: SetClickThrough);
 
         ConfigureTray(config);
 
@@ -356,7 +363,7 @@ public partial class App : Application, ISettingsHost
         else if (firstRun)
         {
             // 初めて起動した人は、何をすればよいか分からない。サンプルを出したまま案内を開く。
-            OpenSetup(SetupStep.Welcome, notice);
+            OpenSetup(SetupStep.Welcome, notice, guideOnClose: true);
         }
     }
 
@@ -514,7 +521,8 @@ public partial class App : Application, ISettingsHost
         catch (Exception ex)
         {
             // 保存できなくても今の動作は変えたままにする。次回起動で戻るだけ。
-            error = $"{UiText.CannotSaveSettings}: {ex.Message}";
+            // 戻ることを書かないと、直したつもりのまま次回に持ち越される。
+            error = $"{UiText.CannotSaveSettings}: {ex.Message}" + Environment.NewLine + UiText.SaveFailedReverts;
             return false;
         }
     }
@@ -530,7 +538,8 @@ public partial class App : Application, ISettingsHost
 
         _overlay!.Reload(config, _layout, _keymap);
 
-        _tray?.SyncAlwaysVisible(config.IsAlwaysVisible);
+        _tray?.SyncDisplayMode(config.EffectiveDisplayMode);
+        _tray?.SyncClickThrough(config.ClickThrough);
         ConfigureTray(config);
 
         _layerSync?.Dispose();
@@ -548,7 +557,24 @@ public partial class App : Application, ISettingsHost
         _tray?.Configure(
             HotkeyRules.TypesCharacter(config.ToggleHotkey) ? "" : config.ToggleHotkey.ToString(),
             _overlay!.Layers,
-            id => config.ManualLayerHotkey(id) is { } spec && !HotkeyRules.TypesCharacter(spec) ? spec.ToString() : null);
+            id => config.ManualLayerHotkey(id) is { } spec && !HotkeyRules.TypesCharacter(spec) ? spec.ToString() : null,
+            setupInProgress: config.SetupStep is not null,
+            clickThroughHotkey: ClickThroughHotkeyText(config));
+
+    /// <summary>登録するときだけ、トレイにショートカットを出す。割り当てが無ければ null。</summary>
+    private static string? ClickThroughHotkeyText(AppConfig config) =>
+        config.EffectiveClickThroughHotkey is { } spec && !HotkeyRules.TypesCharacter(spec)
+            ? spec.ToString()
+            : null;
+
+    /// <summary>
+    /// トレイやバルーンから初期設定を開くとき、どのステップから始めるか。
+    /// 途中で閉じていればその続きから（<see cref="AppConfig.SetupStep"/>）。
+    /// </summary>
+    private SetupStep ResumeSetupStep() =>
+        _config.SetupStep is { } step && Enum.IsDefined(typeof(SetupStep), step)
+            ? (SetupStep)step
+            : SetupStep.Welcome;
 
     /// <summary>
     /// 設定ファイルとキーマップを読み直す。GitHub から読んでいるときは、先に取り直す。
@@ -593,39 +619,116 @@ public partial class App : Application, ISettingsHost
     /// トレイから切り替えたら設定ファイルにも書き戻す。次回起動で戻ってしまうと
     /// 「設定したのに効いていない」と見えるため。
     /// </summary>
-    private void SetAlwaysVisible(bool always)
+    private void SetDisplayMode(string mode)
     {
         var next = _config.Clone();
-        next.DisplayMode = always ? "always" : "layersOnly";
+        next.DisplayMode = mode;
 
         if (!TryApply(next, save: true, reload: false, out var error))
             _tray?.Notify(UiText.CannotSaveSettings, error ?? UiText.UnknownCause,
-                System.Windows.Forms.ToolTipIcon.Warning);
+                System.Windows.Forms.ToolTipIcon.Warning, onClick: () => OpenSettings(SettingsPage.Display));
     }
 
-    private void OpenSettings(SettingsPage page)
+    /// <summary>
+    /// オーバーレイがクリックとドラッグを受け取るかどうかを切り替える。
+    /// トレイ・設定画面・ショートカットの 3 つの入口が、ここを通る。
+    /// </summary>
+    private void SetClickThrough(bool clickThrough)
+    {
+        // 触れるようにするための切り替えなのに、反映の途中で AtRest() が走って板が消えてしまう
+        // （既定の「L1 以上のときだけ表示」では、レイヤーキーを押していない状態は非表示）。
+        // 触る対象が無くならないよう、いま出ているレイヤーを手で選んだことにして押さえておく。
+        if (!clickThrough) _overlay!.PinCurrentLayer();
+
+        var next = _config.Clone();
+        next.ClickThrough = clickThrough;
+
+        // 戻すときに固定は解かない。タブを押して意図して固定したものを、勝手に捨てないため。
+        if (!TryApply(next, save: true, reload: false, out var error))
+            _tray?.Notify(UiText.CannotSaveSettings, error ?? UiText.UnknownCause,
+                System.Windows.Forms.ToolTipIcon.Warning, onClick: () => OpenSettings(SettingsPage.Display));
+    }
+
+    /// <summary>
+    /// オーバーレイのタブをクリックした。トレイからレイヤーを選んだときと同じ後始末が要る。
+    /// 同じタブをもう一度押したときは固定が解ける（<see cref="OverlayController.ToggleManualLayer"/>）。
+    /// </summary>
+    private void OnLayerTabClicked(int layerId)
+    {
+        var wasEnabled = _overlay!.IsEnabled;
+        _overlay.ToggleManualLayer(layerId);
+
+        RefreshLayerHotKeys();
+        _tray?.ShowState(_overlay.IsEnabled, notify: false);
+
+        if (_overlay.IsEnabled != wasEnabled) Applied?.Invoke();
+    }
+
+    /// <summary>
+    /// オーバーレイをドラッグで動かし終えた。基準位置からのずれを覚える。
+    /// 整数に丸めるのは、手で読み書きする設定ファイルに長い小数を書かないため。
+    /// </summary>
+    private void OnOverlayDragged(double offsetX, double offsetY)
+    {
+        var next = _config.Clone();
+        next.OffsetX = Math.Round(offsetX);
+        next.OffsetY = Math.Round(offsetY);
+
+        if (!TryApply(next, save: true, reload: false, out var error))
+            _tray?.Notify(UiText.CannotSaveSettings, error ?? UiText.UnknownCause,
+                System.Windows.Forms.ToolTipIcon.Warning, onClick: () => OpenSettings(SettingsPage.Display));
+    }
+
+    /// <param name="page">
+    /// 開くページ。null なら、開いていればそのページのまま前に出し、新しく開くときは
+    /// <see cref="DefaultSettingsPage"/> で開く。
+    /// </param>
+    private void OpenSettings(SettingsPage? page)
     {
         if (_settings is null)
         {
             _settings = new SettingsWindow(this);
             _settings.Closed += (_, _) => _settings = null;
             _settings.Show();
+
+            page ??= DefaultSettingsPage();
         }
 
-        _settings.ShowPage(page);
+        if (page is { } target) _settings.ShowPage(target);
 
         if (_settings.WindowState == WindowState.Minimized) _settings.WindowState = WindowState.Normal;
         _settings.Activate();
     }
 
+    /// <summary>
+    /// 普段は、いちばんよく触る「表示」から開く。
+    /// サンプルのままか、読み込みに警告があるときは、先にキーボードを直してもらう。
+    /// </summary>
+    private SettingsPage DefaultSettingsPage() =>
+        !_config.Zmk.IsEnabled || _warnings.Count > 0 ? SettingsPage.Keyboard : SettingsPage.Display;
+
     /// <param name="step">開くステップ。null なら開いているステップのまま前に出す。</param>
     /// <param name="notice">ステップの下に出しておく知らせ。</param>
-    private void OpenSetup(SetupStep? step, string? notice = null)
+    /// <param name="guideOnClose">
+    /// 「完了」を見ずに閉じたら、トレイにいることを知らせる。初めて起動した人だけに使う。
+    /// 既定の見せ方ではレイヤーキーを押すまで画面に何も出ず、タスクバーにも出ないので、
+    /// 途中で閉じるとアプリが動いている証拠が画面から消える。
+    /// </param>
+    private void OpenSetup(SetupStep? step, string? notice = null, bool guideOnClose = false)
     {
         if (_setup is null)
         {
-            _setup = new SetupWindow(this);
-            _setup.Closed += (_, _) => _setup = null;
+            var setup = _setup = new SetupWindow(this);
+
+            _setup.Closed += (_, _) =>
+            {
+                _setup = null;
+
+                if (guideOnClose && !setup.ReachedDone)
+                    _tray?.Notify(UiText.StillRunning, UiText.StillRunningBody(_config.ToggleHotkey.ToString()),
+                        onClick: () => OpenSetup(ResumeSetupStep()));
+            };
+
             _setup.Show();
         }
 
@@ -639,24 +742,32 @@ public partial class App : Application, ISettingsHost
     // ---- 有効・無効 ----
 
     /// <summary>
-    /// 常時表示の設定では、切り替えた結果が画面にそのまま出るので通知は要らない。
-    /// 知らせるのは、無効にしても見た目が変わらない「L1 以上のときだけ表示」のときだけ。
+    /// 何も押していないときにも出す設定では、切り替えた結果が画面にそのまま出るので通知は要らない。
+    /// 知らせるのは、無効にしても見た目が変わらない設定（L1 以上のときだけ、など）のときだけ。
     /// </summary>
     private void ToggleOverlay()
     {
         var enabled = _overlay!.Toggle();
 
         RefreshLayerHotKeys();
-        _tray?.ShowState(enabled, notify: !_config.IsAlwaysVisible);
+        _tray?.ShowState(enabled, notify: !_overlay.ShowsBaseLayer);
+
+        // 設定画面の「いまの状態」を合わせる。開いたまま切り替えられる。
+        Applied?.Invoke();
     }
 
     /// <summary>トレイからレイヤーを選んだ。無効だったら有効になるので、それに付随するものも合わせる。</summary>
     private void ShowLayerByHand(int layerId)
     {
-        _overlay!.ShowManualLayer(layerId);
+        var wasEnabled = _overlay!.IsEnabled;
+        _overlay.ShowManualLayer(layerId);
 
         RefreshLayerHotKeys();
         _tray?.ShowState(_overlay.IsEnabled, notify: false);
+
+        // 無効だったら有効になる。変わったときだけ知らせる（レイヤーキーを叩くたびに
+        // 設定画面を作り直さないように）。
+        if (_overlay.IsEnabled != wasEnabled) Applied?.Invoke();
     }
 
     // ---- ホットキー ----
@@ -666,7 +777,14 @@ public partial class App : Application, ISettingsHost
         _toggleRegistration?.Dispose();
         _toggleRegistration = null;
 
-        if (_hotkeySuspensions == 0) RegisterToggleHotKey(_config);
+        _clickThroughRegistration?.Dispose();
+        _clickThroughRegistration = null;
+
+        if (_hotkeySuspensions == 0)
+        {
+            RegisterToggleHotKey(_config);
+            RegisterClickThroughHotKey(_config);
+        }
 
         RefreshLayerHotKeys();
     }
@@ -712,6 +830,48 @@ public partial class App : Application, ISettingsHost
         _toggleFailureNotified = text;
 
         // ここが取れないとアプリを呼び出す手段がトレイだけになるので、必ず知らせる。
+        _tray?.Notify(UiText.CannotRegisterHotkey, error ?? UiText.UnknownCause,
+            System.Windows.Forms.ToolTipIcon.Warning);
+    }
+
+    /// <summary>
+    /// クリックの受け取りを切り替えるショートカット。
+    ///
+    /// レイヤー用と違って「有効なあいだだけ」では縛らない。オーバーレイの性質を変えるものなので、
+    /// 動いているあいだは常に効いてよい（無効のときに押せば、固定して出てくる）。
+    /// </summary>
+    private void RegisterClickThroughHotKey(AppConfig config)
+    {
+        // 既定は割り当てなし。この PC で使える組み合わせを勝手に決めない。
+        if (config.EffectiveClickThroughHotkey is not { } spec)
+        {
+            _clickThroughFailureNotified = null;
+            return;
+        }
+
+        string? error;
+
+        if (HotkeyRules.TypesCharacter(spec))
+        {
+            error = UiText.HotkeyTypesCharacter(spec.ToString());
+        }
+        else
+        {
+            _clickThroughRegistration = _hotKeys!.TryRegister(
+                spec, () => SetClickThrough(!_config.ClickThrough), out error);
+
+            if (_clickThroughRegistration is not null)
+            {
+                _clickThroughFailureNotified = null;
+                return;
+            }
+        }
+
+        var text = spec.ToString();
+        if (_clickThroughFailureNotified == text) return;
+        _clickThroughFailureNotified = text;
+
+        // 利用者が自分で選んだ組み合わせなので、効かないことは知らせる。
         _tray?.Notify(UiText.CannotRegisterHotkey, error ?? UiText.UnknownCause,
             System.Windows.Forms.ToolTipIcon.Warning);
     }
@@ -791,6 +951,14 @@ public partial class App : Application, ISettingsHost
     bool ISettingsHost.Reload(out string? error) =>
         TryApply(_config.Clone(), save: false, reload: true, out error);
 
+    void ISettingsHost.SetClickThrough(bool clickThrough) => SetClickThrough(clickThrough);
+
+    /// <summary>
+    /// 画面を書き出すだけのとき（--render-settings）はオーバーレイを作らないので、
+    /// 既定の「有効」を返す。書き出した絵が「無効」で始まると、README の画像がそう見えてしまう。
+    /// </summary>
+    bool ISettingsHost.OverlayEnabled => _overlay?.IsEnabled ?? true;
+
     bool ISettingsHost.RunAtLogin => StartupEntry.IsEnabled;
 
     /// <summary>
@@ -869,6 +1037,7 @@ public partial class App : Application, ISettingsHost
         _layerSync?.Dispose();
         ReleaseLayerHotKeys();
         _toggleRegistration?.Dispose();
+        _clickThroughRegistration?.Dispose();
         _hotKeys?.Dispose();
         _tray?.Dispose();
 

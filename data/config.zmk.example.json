@@ -6,8 +6,14 @@
   "position": "BottomCenter",
   "keyboardLayout": "jis",
 
-  "_displayMode": "Ctrl+Alt+K で有効にしているあいだの見せ方。layersOnly = L1 以上にいるあいだだけ表示 / always = 常時表示。無効のあいだはどちらでも表示されない。トレイメニューからも切り替えられる。",
+  "_displayMode": "Ctrl+Alt+K で有効にしているあいだの見せ方。layersOnly = L1 以上にいるあいだだけ表示 / selectedLayers = hiddenLayers に無いレイヤーにいるあいだだけ表示 / always = 常時表示。無効のあいだはどれでも表示されない。トレイメニューからも切り替えられる。",
   "displayMode": "layersOnly",
+
+  "_hiddenLayers": "selectedLayers のときに表示しないレイヤーの番号。よく使って覚えたレイヤーを入れておく。0 を外すと、何も押していないときも L0 を表示する。",
+  "hiddenLayers": [0],
+
+  "_clickThrough": "既定の true ではクリックを下のアプリへ素通しする。false にすると、上端のタブをクリックしてレイヤーを選んだり、板をドラッグして好きな位置へ動かしたりできる（動かした分は offsetX / offsetY に入る）。どちらでも、入力中のアプリからフォーカスは奪わない。トレイメニューからも切り替えられる。",
+  "clickThrough": true,
 
   "zmk": {
     "keymapFile": "C:/Users/you/zmk-config/config/corne.keymap",

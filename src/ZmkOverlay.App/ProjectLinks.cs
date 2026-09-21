@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using ZmkOverlay.Core.Text;
 
 namespace ZmkOverlay.App;
 
@@ -12,6 +13,18 @@ internal static class ProjectLinks
 
     /// <summary>キーボードの書き換えの結果を報告する Issue フォーム（.github/ISSUE_TEMPLATE/keyboard-update.yml）。</summary>
     private const string KeyboardUpdateTemplate = "keyboard-update.yml";
+
+    private const string Docs = Repository + "/blob/main";
+
+    /// <summary>
+    /// 次の 2 つは表示言語に合わせた版を指す。README の慣習どおり、基本の名前が英語で ".ja" が日本語。
+    /// 配布物にも同じファイルが入っているが、開発中の実行では隣に無いことがあるので公開先を開く。
+    /// </summary>
+    public static string Readme =>
+        Strings.Language == UiLanguage.Ja ? $"{Docs}/README.ja.md" : $"{Docs}/README.md";
+
+    public static string ConfigurationDoc =>
+        Strings.Language == UiLanguage.Ja ? $"{Docs}/docs/configuration.ja.md" : $"{Docs}/docs/configuration.md";
 
     /// <summary>画面に出すバージョン。</summary>
     public static string AppVersion

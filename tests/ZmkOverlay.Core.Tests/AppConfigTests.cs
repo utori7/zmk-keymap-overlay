@@ -27,6 +27,54 @@ public class AppConfigTests : IDisposable
         Assert.True(AppConfig.Load(_path).IsAlwaysVisible);
     }
 
+    [Theory]
+    [InlineData("layersOnly", false, true, true)]
+    [InlineData("always", true, true, true)]
+    [InlineData("selectedLayers", false, false, true)]
+    [InlineData("somethingNew", false, true, true)]   // 知らない値は layersOnly として扱う
+    public void EachDisplayModeDecidesWhichLayersShow(string mode, bool baseShown, bool l1Shown, bool l2Shown)
+    {
+        var config = new AppConfig { DisplayMode = mode, HiddenLayers = new() { 0, 1 } };
+
+        Assert.Equal(baseShown, config.ShowsLayer(0, baseLayerId: 0));
+        Assert.Equal(l1Shown, config.ShowsLayer(1, baseLayerId: 0));
+        Assert.Equal(l2Shown, config.ShowsLayer(2, baseLayerId: 0));
+    }
+
+    [Fact]
+    public void SelectedLayersStartsLikeLayersOnly()
+    {
+        // 初めて「選んだレイヤーのときだけ」にしたとき、何も押していないのに出てくると驚く。
+        var config = new AppConfig { DisplayMode = DisplayModes.SelectedLayers };
+
+        Assert.Equal(new[] { 0 }, config.HiddenLayers);
+        Assert.False(config.ShowsLayer(0, baseLayerId: 0));
+        Assert.True(config.ShowsLayer(1, baseLayerId: 0));
+    }
+
+    [Fact]
+    public void ShowingEveryLayerSurvivesTheFile()
+    {
+        // 全部に付けた（空にした）のに、読み直したら既定の [0] に戻る、ということがないように。
+        new AppConfig { DisplayMode = DisplayModes.SelectedLayers, HiddenLayers = new() }.Save(_path);
+
+        var loaded = AppConfig.Load(_path);
+
+        Assert.Empty(loaded.HiddenLayers);
+        Assert.True(loaded.ShowsLayer(0, baseLayerId: 0));
+    }
+
+    [Fact]
+    public void HiddenLayersRoundTripThroughTheFile()
+    {
+        new AppConfig { DisplayMode = DisplayModes.SelectedLayers, HiddenLayers = new() { 0, 3 } }.Save(_path);
+
+        var loaded = AppConfig.Load(_path);
+
+        Assert.Equal(DisplayModes.SelectedLayers, loaded.EffectiveDisplayMode);
+        Assert.Equal(new[] { 0, 3 }, loaded.HiddenLayers);
+    }
+
     [Fact]
     public void ComputedPropertiesAreNotWrittenToTheFile()
     {
@@ -37,7 +85,12 @@ public class AppConfigTests : IDisposable
 
         Assert.DoesNotContain("isHoldMode", text);
         Assert.DoesNotContain("isAlwaysVisible", text);
+        Assert.DoesNotContain("isSelectedLayers", text);
+        Assert.DoesNotContain("effectiveDisplayMode", text);
         Assert.DoesNotContain("isEnabled", text);
+        Assert.DoesNotContain("isInteractive", text);
+        Assert.DoesNotContain("hasOffset", text);
+        Assert.DoesNotContain("effectiveClickThroughHotkey", text);
     }
 
     [Fact]
@@ -97,10 +150,14 @@ public class AppConfigTests : IDisposable
         copy.KeyUnitPx = 30;
         copy.Zmk.SignalKeys["2"] = "F14";
         copy.ToggleHotkey.Key = "J";
+        copy.ClickThroughHotkey.Key = "F14";
+        copy.OffsetX = 120;
 
         Assert.Equal(50, original.KeyUnitPx);
         Assert.Single(original.Zmk.SignalKeys);
         Assert.Equal("K", original.ToggleHotkey.Key);
+        Assert.Equal("", original.ClickThroughHotkey.Key);
+        Assert.Equal(0, original.OffsetX);
 
         copy.Save(_path);
         Assert.Contains("複製にも残る", File.ReadAllText(_path));
@@ -131,6 +188,67 @@ public class AppConfigTests : IDisposable
         config.Save(_path);
 
         Assert.Equal("Win+Alt+Q", AppConfig.Load(_path).ManualLayerHotkey(1)?.ToString());
+    }
+
+    [Fact]
+    public void ClicksPassThroughUnlessTheFileSaysOtherwise()
+    {
+        // すでに使っている人の config.json にはこのキーが無い。
+        // 読んだときに素通しのままでないと、ある日突然オーバーレイがクリックを食べ始める。
+        File.WriteAllText(_path, "{}");
+
+        Assert.True(AppConfig.Load(_path).ClickThrough);
+        Assert.False(AppConfig.Load(_path).IsInteractive);
+    }
+
+    [Fact]
+    public void ClickThroughRoundTripsThroughTheFile()
+    {
+        new AppConfig { ClickThrough = false }.Save(_path);
+
+        Assert.True(AppConfig.Load(_path).IsInteractive);
+    }
+
+    [Fact]
+    public void NoShortcutSwitchesClickThroughUntilOneIsChosen()
+    {
+        // 既定を決めない。押さえる組み合わせがその PC で使えるとは限らないため。
+        Assert.Null(new AppConfig().EffectiveClickThroughHotkey);
+        Assert.Equal("", new AppConfig().ClickThroughHotkey.ToString());
+    }
+
+    [Fact]
+    public void ClickThroughHotkeyRoundTripsThroughTheFile()
+    {
+        // 数字キーの無いキーボードでも割り当てられる。
+        var config = new AppConfig
+        {
+            ClickThroughHotkey = new HotkeySpec { Modifiers = { "Ctrl", "Shift" }, Key = "F13" },
+        };
+
+        config.Save(_path);
+
+        Assert.Equal("Ctrl+Shift+F13", AppConfig.Load(_path).EffectiveClickThroughHotkey?.ToString());
+    }
+
+    [Fact]
+    public void DraggedPositionRoundTripsThroughTheFile()
+    {
+        new AppConfig { OffsetX = -120, OffsetY = 64 }.Save(_path);
+
+        var loaded = AppConfig.Load(_path);
+
+        Assert.Equal(-120, loaded.OffsetX);
+        Assert.Equal(64, loaded.OffsetY);
+        Assert.True(loaded.HasOffset);
+    }
+
+    [Fact]
+    public void NotDraggedUntilTheOffsetIsNotZero()
+    {
+        // 「ドラッグした位置を捨てる」を出すかどうかの判断に使う。
+        Assert.False(new AppConfig().HasOffset);
+        Assert.True(new AppConfig { OffsetY = 1 }.HasOffset);
     }
 
     [Fact]

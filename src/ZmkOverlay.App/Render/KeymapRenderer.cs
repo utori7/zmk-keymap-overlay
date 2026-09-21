@@ -25,13 +25,18 @@ internal static class KeymapRenderer
     /// 全レイヤーのパネル。添字はキーマップ上の並び（ZMK のレイヤー番号とは別物）。
     /// オーバーレイ表示と確認用の PNG 出力の両方がこれを使うので、見た目が食い違うことがない。
     /// </summary>
+    /// <param name="interactive">
+    /// クリックを受け取る状態か。カーソルの形とマウスを載せたときの色だけが変わる（寸法は変わらない）。
+    /// 設定から読まずに引数で受けるのは、設定画面と初期設定のプレビュー・PNG 出力も同じ設定を渡してくるため。
+    /// 設定から読むと、押しても何も起きないプレビューのタブに手のカーソルが出る。
+    /// </param>
     public static IReadOnlyList<FrameworkElement> BuildPanels(
-        AppConfig config, PhysicalLayout layout, Keymap keymap)
+        AppConfig config, PhysicalLayout layout, Keymap keymap, bool interactive = false)
     {
         var metrics = new Metrics(config.KeyUnitPx);
 
         var panels = Enumerable.Range(0, keymap.Layers.Count)
-            .Select(slot => BuildPanel(config, layout, keymap, slot, metrics))
+            .Select(slot => BuildPanel(config, layout, keymap, slot, metrics, interactive))
             .ToList();
 
         // 幅はキー配置で決まり全レイヤー共通だが、高さはコンボ行の有無と
@@ -85,11 +90,11 @@ internal static class KeymapRenderer
     /// 全レイヤーで同じ結果になり、寸法を揃える妨げにならない。
     /// </summary>
     private static FrameworkElement BuildPanel(
-        AppConfig config, PhysicalLayout layout, Keymap keymap, int slot, Metrics m)
+        AppConfig config, PhysicalLayout layout, Keymap keymap, int slot, Metrics m, bool interactive)
     {
         var (keys, keysWidth) = BuildKeys(layout, keymap.Layers[slot], m);
 
-        var tabs = BuildTabs(config, keymap, slot, m);
+        var tabs = BuildTabs(config, keymap, slot, m, interactive);
         tabs.MaxWidth = keysWidth;
 
         var hint = BuildHint(config, keymap, m);
@@ -120,6 +125,10 @@ internal static class KeymapRenderer
         };
 
         TextElement.SetFontFamily(border, Theme.Font);
+
+        // 板そのものはドラッグで動かせる。掴めることをカーソルで示す（タブの上だけ手のカーソルが勝つ）。
+        if (interactive) border.Cursor = Cursors.SizeAll;
+
         return border;
     }
 
@@ -141,7 +150,7 @@ internal static class KeymapRenderer
 
     // ---- タブと操作ヒント ----
 
-    private static WrapPanel BuildTabs(AppConfig config, Keymap keymap, int slot, Metrics m)
+    private static WrapPanel BuildTabs(AppConfig config, Keymap keymap, int slot, Metrics m, bool interactive)
     {
         var tabs = new WrapPanel
         {
@@ -160,27 +169,48 @@ internal static class KeymapRenderer
             // キーボードを操作しても自動では出てこない。ベースレイヤーは合図が無くて当然なので対象外。
             var followable = i == 0 || !config.LayerSync.Enabled || autoShown.Contains(layer.Index);
 
-            tabs.Children.Add(BuildTab(layer, active: i == slot, followable, m));
+            tabs.Children.Add(BuildTab(layer, active: i == slot, followable, m, interactive));
         }
 
         return tabs;
     }
 
     /// <summary>自動で出てこないレイヤーは、手で選ぶしかないことを淡い文字と点線の枠で示す。</summary>
-    private static UIElement BuildTab(Layer layer, bool active, bool followable, Metrics m)
+    private static UIElement BuildTab(Layer layer, bool active, bool followable, Metrics m, bool interactive)
     {
+        // 塗る板は選択中でなくても置く。マウスを載せたときに差し替えるのがこれ 1 枚で済み、
+        // 角丸のまま光らせられる（セル全体を塗ると、選択中の丸いタブの肩が角張って見える）。
+        // 子を持たない Border は寸法 0 なので、全レイヤーで寸法を揃える仕組みには影響しない。
+        var idle = active ? Theme.TabActiveBg : Brushes.Transparent;
 
-        var cell = new Grid { Margin = new Thickness(0, 0, m.Unit * 0.05, m.Unit * 0.04) };
-
-        if (active)
+        var fill = new Border
         {
-            cell.Children.Add(new Border
-            {
-                Background = Theme.TabActiveBg,
-                CornerRadius = new CornerRadius(m.Tab),
-            });
-        }
-        else if (!followable)
+            Background = idle,
+            CornerRadius = new CornerRadius(m.Tab),
+        };
+
+        var cell = new LayerTab
+        {
+            LayerId = layer.Index,
+            Margin = new Thickness(0, 0, m.Unit * 0.05, m.Unit * 0.04),
+
+            // Background が null の Panel は当たり判定に出てこない。透明でも置いておくと
+            // 丸い板の外側（角）も含めてタブ全体が押せる。不透明度 0 なので見た目は変わらず、
+            // 背景は寸法の計算にも関わらない。
+            Background = Brushes.Transparent,
+
+            Fill = fill,
+            IdleBackground = idle,
+            HoverBackground = interactive
+                ? (active ? Theme.TabActiveHoverBg : Theme.TabHoverBg)
+                : null,
+        };
+
+        if (interactive) cell.Cursor = Cursors.Hand;
+
+        cell.Children.Add(fill);
+
+        if (!active && !followable)
         {
             cell.Children.Add(new Rectangle
             {
@@ -193,7 +223,7 @@ internal static class KeymapRenderer
         }
 
         // 選択中だけ太字にすると幅が変わり、タブ行の長さがレイヤーごとにずれる。
-        // 強調は背景と文字色だけで行う。
+        // 強調は背景と文字色だけで行う。マウスを載せたときも色しか変えない。
         cell.Children.Add(new TextBlock
         {
             Text = $"L{layer.Index} {layer.Name}".TrimEnd(),
@@ -218,21 +248,8 @@ internal static class KeymapRenderer
         if (!HotkeyRules.TypesCharacter(config.ToggleHotkey))
             parts.Add(UiText.HintToggle(config.ToggleHotkey.ToString()));
 
-        // 既定の Ctrl+Alt+数字 のときだけ、範囲でまとめて短く書ける。利用者が割り当てを変えていたら
-        // 並べると長くなりすぎるので出さない（割り当てはトレイのメニューと設定画面で見られる）。
-        // この PC の配列で文字の入力に使われて登録していない番号があるときも、範囲では書けないので出さない。
-        var numbered = keymap.Layers.Select(l => l.Index).Where(i => i is >= 0 and <= 9).ToList();
-        if (config.EnableManualLayerKeys
-            && config.LayerHotkeys.Count == 0
-            && numbered.Count > 0
-            && numbered.All(i => config.ManualLayerHotkey(i) is not null))
-        {
-            var range = numbered.Count == 1
-                ? numbered[0].ToString(CultureInfo.InvariantCulture)
-                : $"{numbered.Min()}–{numbered.Max()}";
-
-            parts.Add(UiText.HintLayers(range));
-        }
+        if (config.EnableManualLayerKeys && LayerKeysHint(config, keymap) is { } keys)
+            parts.Add(UiText.HintLayers(keys));
 
         return new TextBlock
         {
@@ -242,6 +259,61 @@ internal static class KeymapRenderer
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(m.Unit * 0.5, 0, m.Unit * 0.04, 0),
         };
+    }
+
+    /// <summary>
+    /// レイヤーのショートカットを 1 つの短い文にまとめる。まとめられなければ null。
+    ///
+    /// 全レイヤーで同じ文にすること。レイヤーごとに変えると、ヒントの幅でタブ行に収まるかが変わり、
+    /// 板の中の行の並びがレイヤーごとに跳ねる（「板の大きさを固定する」の節）。
+    /// </summary>
+    private static string? LayerKeysHint(AppConfig config, Keymap keymap)
+    {
+        // 既定の Ctrl+Alt+数字 は範囲でまとめて短く書ける。
+        // この PC の配列で文字の入力に使われて登録していない番号があるときは、範囲では書けない。
+        var numbered = keymap.Layers.Select(l => l.Index).Where(i => i is >= 0 and <= 9).ToList();
+
+        if (config.LayerHotkeys.Count == 0)
+        {
+            if (numbered.Count == 0) return null;
+
+            var specs = numbered.Select(config.ManualLayerHotkey).ToList();
+            if (specs.Any(s => s is null)) return null;
+
+            var range = numbered.Count == 1
+                ? numbered[0].ToString(CultureInfo.InvariantCulture)
+                : $"{numbered.Min()}–{numbered.Max()}";
+
+            return With(specs[0]!, range);
+        }
+
+        // 割り当てを変えている場合。全レイヤーに割り当てがあり修飾キーが共通なら、キーを並べる。
+        // 以前は変えた時点で出さなくしていたが、数字キーの無いキーボードで割り当てを変えた人ほど
+        // 手がかりを失っていた（変える理由がいちばんある人たち）。
+        var assigned = new List<HotkeySpec>();
+
+        foreach (var layer in keymap.Layers)
+        {
+            if (config.ManualLayerHotkey(layer.Index) is not { } spec) return null;
+            assigned.Add(spec);
+        }
+
+        if (assigned.Count == 0) return null;
+
+        var prefix = Modifiers(assigned[0]);
+        if (assigned.Any(s => Modifiers(s) != prefix)) return null;
+
+        return With(assigned[0], string.Join(" ", assigned.Select(s => s.Key)));
+    }
+
+    /// <summary>修飾キーの並び。表記の揺れは設定画面が正すので、ここでは書かれたまま使う。</summary>
+    private static string Modifiers(HotkeySpec spec) => string.Join("+", spec.Modifiers);
+
+    /// <summary>共通の修飾キーに、キーの部分をつなげる。</summary>
+    private static string With(HotkeySpec spec, string keys)
+    {
+        var prefix = Modifiers(spec);
+        return prefix.Length == 0 ? keys : prefix + "+" + keys;
     }
 
     // ---- キー ----
