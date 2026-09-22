@@ -87,7 +87,7 @@ foreach ($required in @($app, $probe)) {
 $script:pass = 0
 $script:fail = 0
 
-function Write-Config([string]$displayMode) {
+function Write-Config([string]$displayMode, [string]$hiddenLayers = '[0]', [string]$syncMode = 'hold') {
     $km = ($fx + '\demo40.keymap')                     -replace '\\','/'
     $pl = ($fx + '\boards\shields\demo40\demo40.dtsi') -replace '\\','/'
 @"
@@ -96,12 +96,13 @@ function Write-Config([string]$displayMode) {
   "language": "en",
   "keyboardLayout": "us",
   "displayMode": "$displayMode",
+  "hiddenLayers": $hiddenLayers,
   "zmk": {
     "keymapFile": "$km",
     "physicalLayoutFile": "$pl",
     "signalKeys": { "1": "F13", "2": "F14" }
   },
-  "layerSync": { "enabled": true, "mode": "hold" }
+  "layerSync": { "enabled": true, "mode": "$syncMode" }
 }
 "@ | Set-Content $cfg -Encoding utf8
 }
@@ -143,14 +144,14 @@ function AssertHotkeys([string]$where) {
     "    !! {0}: the app does not hold {1} -- registration failed, not a logic bug" -f $where, ($missing -join ', ')
 }
 
-function StartApp([string]$displayMode) {
+function StartApp([string]$displayMode, [string]$hiddenLayers = '[0]', [string]$syncMode = 'hold') {
     Get-Process ZmkOverlay -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Milliseconds 600
 
     $stale = (Get-Process ZmkOverlay -ErrorAction SilentlyContinue | Measure-Object).Count
     if ($stale -gt 0) { Write-Error "$stale stale instance(s) still running"; exit 2 }
 
-    Write-Config $displayMode
+    Write-Config $displayMode $hiddenLayers $syncMode
     $p = Start-Process $app -ArgumentList '--config', $cfg -PassThru
     Start-Sleep -Seconds 3
 
@@ -228,6 +229,58 @@ function Test-StackedLayers {
     ''
 }
 
+function Test-SelectedLayers {
+    # "Show only on the layers I choose". A layer the user knows by heart must
+    # stay hidden -- even when the base layer is on screen, because leaving the
+    # base layer up while L1 is active would show keys that are not in effect.
+    $p = StartApp 'selectedLayers' '[0, 1]'
+
+    '  [selectedLayers, L0 and L1 unchecked]'
+    Check        'ON  / L0 rest'              $false
+    CheckHolding 'ON  / L1 hold (unchecked)'  $false 'F13'
+    CheckHolding 'ON  / L2 hold (checked)'    $true  'F14'
+    Check        'after release'              $false
+
+    StopApp $p
+    ''
+
+    $p = StartApp 'selectedLayers' '[1]'
+
+    '  [selectedLayers, only L1 unchecked]'
+    Check        'ON  / L0 rest'              $true
+    CheckHolding 'ON  / L1 hold (must hide)'  $false 'F13'
+    Check        'after release (L0 back)'    $true
+
+    # Releasing a checked layer on top of an unchecked one must hide again,
+    # not fall back to showing the unchecked layer.
+    Start-Process $probe -ArgumentList '--hold','F13','4500' -WindowStyle Hidden
+    Start-Sleep -Milliseconds 800
+    Start-Process $probe -ArgumentList '--hold','F14','800' -WindowStyle Hidden
+    Start-Sleep -Milliseconds 800
+    Check 'holding F13 and F14'               $true
+    Start-Sleep -Milliseconds 1300
+    Check 'F14 released, F13 still held'      $false
+    Start-Sleep -Milliseconds 2800
+    Check 'both released'                     $true
+
+    StopApp $p
+    ''
+
+    # In toggle mode the second signal leaves the layer. That has to work for a
+    # layer that was never on screen, or the overlay stays gone for good.
+    $p = StartApp 'selectedLayers' '[1]' 'toggle'
+
+    '  [selectedLayers, only L1 unchecked, toggle]'
+    Check 'ON  / L0 rest'                     $true
+    Tap 'F13'
+    Check 'toggled into L1 (must hide)'       $false
+    Tap 'F13'
+    Check 'toggled out (L0 back)'             $true
+
+    StopApp $p
+    ''
+}
+
 function Test-ModifierHeld {
     # With a home-row mod, Ctrl can already be down when the layer key sends
     # F13. The app must still follow, and the signal must not leak as Ctrl+F13.
@@ -264,6 +317,7 @@ function Test-SecondInstance {
 
 Test-Mode 'layersOnly'
 Test-Mode 'always'
+Test-SelectedLayers
 Test-ManualLayer
 Test-StackedLayers
 Test-ModifierHeld

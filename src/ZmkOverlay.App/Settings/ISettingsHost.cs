@@ -42,8 +42,23 @@ internal interface ISettingsHost
     /// <summary>設定は変えずに、キーマップのファイルを読み直す。</summary>
     bool Reload(out string? error);
 
+    /// <summary>
+    /// オーバーレイがクリックとドラッグを受け取るかどうかを切り替える。
+    ///
+    /// <see cref="TryApply"/> に任せられないのは、反映の途中でオーバーレイが
+    /// 「何も押していない状態」に戻り、見せ方によっては消えてしまうため。
+    /// 触る対象が残るよう、いま出ているレイヤーを押さえる処理がアプリ側にある。
+    /// </summary>
+    void SetClickThrough(bool clickThrough);
+
     /// <summary>GitHub や ZMK 本体から取ってくるときに使う。アプリ全体で 1 つ。</summary>
     ZmkOverlay.Core.Zmk.GitHubSource GitHub { get; }
+
+    /// <summary>
+    /// オーバーレイが有効か。「いまの状態」に出す。無効なら、ほかの設定が何であっても表示されないので、
+    /// 設定を見比べる前にそれが分かるようにする。
+    /// </summary>
+    bool OverlayEnabled { get; }
 
     /// <summary>スタートアップフォルダの実体を見る。設定ファイルには持たない。</summary>
     bool RunAtLogin { get; }

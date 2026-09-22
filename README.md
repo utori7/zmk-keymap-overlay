@@ -9,7 +9,7 @@ While you hold a layer key, that layer's keys appear.
 
 ## Features
 
-- Shows a layer only while its layer key is held (or keep it on screen all the time)
+- Shows a layer only while its layer key is held. You can also keep it on screen all the time, or show it only on the layers you pick, leaving out the ones you already know
 - Reads your zmk-config directly — just paste the GitHub URL, or pick a `.keymap` file on your PC
 - Works out where the keys are (the physical layout)
   - uses the one in your zmk-config if there is one
@@ -17,7 +17,8 @@ While you hold a layer key, that layer's keys appear.
   - otherwise guesses it from how the keymap is written (and tells you it guessed)
 - Prepares an updated keymap so your keyboard can tell the PC which layer is active
 - Shows any layer with a shortcut too (you can choose the combinations)
-- English / Japanese, light / dark
+- Clicks pass through by default, but you can let the overlay take them: click a tab along the top to pick a layer, or drag the overlay wherever you want it (it still never takes focus)
+- English / Japanese; the settings and setup windows follow Windows' light / dark theme
 - No administrator rights, no installer, no registry. It does **not** use a keyboard hook to watch your typing
 
 ## Requirements
@@ -88,8 +89,11 @@ If you open it with **Report the result** in the setup guide's "Try it out" step
   If you can't see it, it is under **^** on the taskbar
 - **Ctrl+Alt+K** turns the overlay on and off
 - **Ctrl+Alt+number** shows a layer (you can change these in Settings)
-- **Settings** (tray → Settings…): size, position, opacity, when to show, signal keys, shortcuts,
-  language, start when signing in
+- **Settings** (tray → Settings…)
+  - Display: when to show (including which layers), size, opacity, position
+  - Layers: following the keyboard's layers, layer names, signal keys
+  - Keyboard: where your keymap comes from, key positions, this PC's layout (JIS / US)
+  - Shortcuts, and General: language, start when signing in
 
 On layouts that type symbols with AltGr (which Windows treats as Ctrl+Alt), such as German, holding a Ctrl+Alt
 combination as a shortcut would stop you typing those symbols. The app never takes a combination that types a
@@ -119,7 +123,8 @@ They fill in your keyboard, ZMK version and app version; whether to submit is up
 
 `config.json` lives next to `ZmkOverlay.exe` (or in `%APPDATA%\ZmkOverlay\` if that folder is not writable).
 You normally change everything in Settings. For the full list of keys, see
-[docs/configuration.md](docs/configuration.md) (Japanese).
+[docs/configuration.md](docs/configuration.md). You can also open it from
+Settings → General → About.
 
 ## Uninstall
 

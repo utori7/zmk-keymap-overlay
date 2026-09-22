@@ -183,6 +183,19 @@ public sealed class ZmkSourceConfig
     }
 }
 
+/// <summary><see cref="AppConfig.DisplayMode"/> に書く値。</summary>
+public static class DisplayModes
+{
+    /// <summary>L1 以上のレイヤーにいるあいだだけ表示する。L0 では出ない。</summary>
+    public const string LayersOnly = "layersOnly";
+
+    /// <summary><see cref="AppConfig.HiddenLayers"/> に無いレイヤーにいるあいだだけ表示する。L0 も選べる。</summary>
+    public const string SelectedLayers = "selectedLayers";
+
+    /// <summary>常に表示し、レイヤーに応じて中身が切り替わる。</summary>
+    public const string Always = "always";
+}
+
 public sealed class AppConfig
 {
     /// <summary>設定ファイルからの相対パス。既定は同梱のサンプル。</summary>
@@ -203,16 +216,52 @@ public sealed class AppConfig
 
     /// <summary>
     /// ホットキーで有効にしているあいだ、どう見せるか。
-    /// 無効のあいだは、どちらの値でも一切表示しない。
+    /// 無効のあいだは、どの値でも一切表示しない。
     ///
-    /// "layersOnly" L1 以上のレイヤーにいるあいだだけ表示する。L0 では出ない。
-    /// "always"     常に表示し、レイヤーに応じて中身が切り替わる。
+    /// "layersOnly"     L1 以上のレイヤーにいるあいだだけ表示する。L0 では出ない。
+    /// "selectedLayers" <see cref="HiddenLayers"/> に無いレイヤーにいるあいだだけ表示する。
+    /// "always"         常に表示し、レイヤーに応じて中身が切り替わる。
+    ///
+    /// 知らない値は "layersOnly" として扱う。
     /// </summary>
-    public string DisplayMode { get; set; } = "layersOnly";
+    public string DisplayMode { get; set; } = DisplayModes.LayersOnly;
 
     [JsonIgnore]
     public bool IsAlwaysVisible =>
-        string.Equals(DisplayMode, "always", StringComparison.OrdinalIgnoreCase);
+        string.Equals(DisplayMode, DisplayModes.Always, StringComparison.OrdinalIgnoreCase);
+
+    [JsonIgnore]
+    public bool IsSelectedLayers =>
+        string.Equals(DisplayMode, DisplayModes.SelectedLayers, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary><see cref="DisplayMode"/> を <see cref="DisplayModes"/> のどれかに揃えたもの。</summary>
+    [JsonIgnore]
+    public string EffectiveDisplayMode =>
+        IsAlwaysVisible ? DisplayModes.Always
+        : IsSelectedLayers ? DisplayModes.SelectedLayers
+        : DisplayModes.LayersOnly;
+
+    /// <summary>
+    /// "selectedLayers" のときに表示しないレイヤーの番号。よく使って覚えたレイヤーを入れておくと、
+    /// そのレイヤーに入っても出ないので気が散らない。
+    ///
+    /// 表示する側ではなく表示しない側を持つのは、キーマップにあとから足したレイヤーを表示するため。
+    /// 新しいレイヤーはまだ覚えていない。
+    /// 既定の [0] は "layersOnly" と同じ動き。初めてこの見せ方を選んだときは、そこから外していく。
+    /// </summary>
+    public List<int> HiddenLayers { get; set; } = new() { 0 };
+
+    /// <summary>
+    /// そのレイヤーにいるときにオーバーレイを出すか。
+    /// 何も押していないときは <paramref name="layerId"/> に <paramref name="baseLayerId"/> を渡す。
+    /// 手で選んだレイヤー（Ctrl+Alt+番号）は明示的な操作なので、これに関係なく出す。
+    /// </summary>
+    public bool ShowsLayer(int layerId, int baseLayerId)
+    {
+        if (IsAlwaysVisible) return true;
+        if (IsSelectedLayers) return !HiddenLayers.Contains(layerId);
+        return layerId != baseLayerId;
+    }
 
     /// <summary>
     /// "BottomCenter" | "BottomLeft" | "BottomRight" | "TopCenter" | "TopLeft" | "TopRight" | "Center"
@@ -222,6 +271,34 @@ public sealed class AppConfig
     /// <summary>画面端からの余白（ピクセル）。Center では無視される。</summary>
     public double Margin { get; set; } = 48;
 
+    /// <summary>
+    /// <see cref="Position"/> で決まる位置からのずれ（ピクセル）。オーバーレイをドラッグで動かすと入る。
+    ///
+    /// 置いた場所そのものではなく、基準からのずれで持つ。カーソルのあるモニタに出すという動きを保ったまま、
+    /// 解像度の違うモニタでも同じような場所に出せるため。基準を選び直したときは捨てる（設定画面）。
+    /// </summary>
+    public double OffsetX { get; set; }
+
+    /// <inheritdoc cref="OffsetX"/>
+    public double OffsetY { get; set; }
+
+    /// <summary>ドラッグで動かした結果、基準の位置から離れているか。</summary>
+    [JsonIgnore]
+    public bool HasOffset => OffsetX != 0 || OffsetY != 0;
+
+    /// <summary>
+    /// クリックを下のアプリへ素通しするか。
+    ///
+    /// 既定は素通し。タイピング中に視界の端に出す道具なので、普段は邪魔をしないのが正しい。
+    /// false にすると、オーバーレイがクリックとドラッグを受け取る（タブでレイヤーを選ぶ・板を動かす）。
+    /// 受け取るあいだも、フォーカスは奪わない（WS_EX_NOACTIVATE は常時）。
+    /// </summary>
+    public bool ClickThrough { get; set; } = true;
+
+    /// <summary>オーバーレイがクリックとドラッグを受け取る状態か。画面側で毎回否定を書かずに済むように。</summary>
+    [JsonIgnore]
+    public bool IsInteractive => !ClickThrough;
+
     /// <summary>"jis" | "us"。ラベル解決に使う（Phase 1 以降）。</summary>
     public string KeyboardLayout { get; set; } = "jis";
 
@@ -230,6 +307,19 @@ public sealed class AppConfig
 
     public HotkeySpec ToggleHotkey { get; set; } =
         new() { Modifiers = { "Ctrl", "Alt" }, Key = "K" };
+
+    /// <summary>
+    /// <see cref="ClickThrough"/> を切り替えるショートカット。key が空なら割り当てない（既定）。
+    ///
+    /// 既定を決めないのは、押さえた組み合わせがその人の環境で使えるとは限らないため。
+    /// 数字キーの無いキーボードもあるので、数字前提の既定も作らない。
+    /// </summary>
+    public HotkeySpec ClickThroughHotkey { get; set; } = new();
+
+    /// <summary>クリックの受け取りを切り替えるショートカット。割り当てが無いなら null。</summary>
+    [JsonIgnore]
+    public HotkeySpec? EffectiveClickThroughHotkey =>
+        string.IsNullOrWhiteSpace(ClickThroughHotkey.Key) ? null : ClickThroughHotkey;
 
     public LayerSyncConfig LayerSync { get; set; } = new();
 
@@ -266,6 +356,15 @@ public sealed class AppConfig
     /// <summary>レイヤーのショートカットが、利用者が選んだものではなく既定の Ctrl+Alt+番号 か。</summary>
     public bool UsesDefaultLayerHotkey(int layerId) =>
         EnableManualLayerKeys && !LayerHotkeys.ContainsKey(layerId.ToString(CultureInfo.InvariantCulture));
+
+    /// <summary>
+    /// 初期設定の案内を、次はどのステップから開くか。途中で閉じたときのステップが入り、
+    /// 「完了」まで見たら消える。入っているあいだ、トレイのメニューは「続ける」と出す。
+    ///
+    /// 設定ではなく案内の途中の記録だが、PC を再起動しても続きから開けるように設定ファイルに持つ。
+    /// 「やり直す」しか入口が無いと、途中まで進めた人が消えると思って押せない。
+    /// </summary>
+    public int? SetupStep { get; set; }
 
     /// <summary>モデルに無いキーの保持。<see cref="ZmkSourceConfig.Extra"/> と同じ目的。</summary>
     [JsonExtensionData]

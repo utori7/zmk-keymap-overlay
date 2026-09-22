@@ -7,12 +7,14 @@ using System.Reflection;
 using System.Windows.Forms;
 using ZmkOverlay.App.Interop;
 using ZmkOverlay.App.Text;
+using ZmkOverlay.Core.Config;
 
 namespace ZmkOverlay.App;
 
 /// <summary>
 /// 常駐アプリなので、終了手段が必ず見えている必要がある。
-/// オーバーレイ自体はクリックを受け取らないため、操作の受け皿はここと設定画面だけ。
+/// オーバーレイは普段クリックを受け取らないため、操作の受け皿はここと設定画面。
+/// 受け取る設定に切り替えれば、レイヤーの選択と移動だけはオーバーレイ上でもできる。
 ///
 /// GlobalUsings で Color / Point / Size / Rectangle などは WPF 側に寄せてあるので、
 /// このファイルで System.Drawing のそれらを使うときは完全修飾で書くこと。
@@ -33,7 +35,9 @@ public sealed class TrayIcon : IDisposable
     private readonly ToolStripMenuItem _layers;
     private readonly ToolStripMenuItem _mode;
     private readonly ToolStripMenuItem _layersOnly;
+    private readonly ToolStripMenuItem _selected;
     private readonly ToolStripMenuItem _always;
+    private readonly ToolStripMenuItem _clickable;
     private readonly ToolStripMenuItem _settings;
     private readonly ToolStripMenuItem _setup;
     private readonly ToolStripMenuItem _reload;
@@ -41,16 +45,21 @@ public sealed class TrayIcon : IDisposable
     private readonly ToolStripMenuItem _exit;
 
     private readonly Action<int> _showLayer;
-    private readonly Action<bool> _setAlwaysVisible;
+    private readonly Action<string> _setDisplayMode;
+    private readonly Action<bool> _setClickThrough;
     private readonly Action _showWarnings;
 
     private IReadOnlyList<string> _currentWarnings = Array.Empty<string>();
     private bool _enabled = true;
 
+    /// <summary>初期設定を途中で閉じているか。メニューの文言を「続ける」に変える。</summary>
+    private bool _setupInProgress;
+
     /// <summary>直近のバルーンをクリックしたときの動作。バルーンごとに差し替える。</summary>
     private Action? _balloonClicked;
 
     private bool _suppressModeEvents;
+    private bool _suppressClickableEvents;
     private bool _disposed;
 
     public TrayIcon(
@@ -60,12 +69,15 @@ public sealed class TrayIcon : IDisposable
         Action openSetup,
         Action reload,
         Action exit,
-        bool alwaysVisible,
-        Action<bool> setAlwaysVisible,
-        Action showWarnings)
+        string displayMode,
+        Action<string> setDisplayMode,
+        Action showWarnings,
+        bool clickThrough,
+        Action<bool> setClickThrough)
     {
         _showLayer = showLayer;
-        _setAlwaysVisible = setAlwaysVisible;
+        _setDisplayMode = setDisplayMode;
+        _setClickThrough = setClickThrough;
         _showWarnings = showWarnings;
 
         _enabledIcon = LoadAppIcon();
@@ -86,17 +98,30 @@ public sealed class TrayIcon : IDisposable
         // キーボードをまだ書き換えていなくても、ここから各レイヤーを見られる。
         _layers = new ToolStripMenuItem();
 
-        // 2 つ並べて、選ばれていない側が何なのかも見えるようにする。
+        // 並べて、選ばれていない側が何なのかも見えるようにする。
         // チェックボックス 1 個だと、外したときの挙動がどこにも書かれない。
-        _layersOnly = new ToolStripMenuItem { Checked = !alwaysVisible };
-        _always = new ToolStripMenuItem { Checked = alwaysVisible };
+        // 出る場面が少ない順に並べる。どのレイヤーで出すかは設定画面で選ぶ。
+        _layersOnly = new ToolStripMenuItem();
+        _selected = new ToolStripMenuItem();
+        _always = new ToolStripMenuItem();
 
-        _layersOnly.Click += (_, _) => ChooseMode(always: false);
-        _always.Click += (_, _) => ChooseMode(always: true);
+        _layersOnly.Click += (_, _) => ChooseMode(DisplayModes.LayersOnly);
+        _selected.Click += (_, _) => ChooseMode(DisplayModes.SelectedLayers);
+        _always.Click += (_, _) => ChooseMode(DisplayModes.Always);
 
         _mode = new ToolStripMenuItem();
         _mode.DropDownItems.Add(_layersOnly);
+        _mode.DropDownItems.Add(_selected);
         _mode.DropDownItems.Add(_always);
+
+        SyncDisplayMode(displayMode);
+
+        // 「クリックスルー」にチェックを付けると、チェックがどちらの状態を指すのか読めない。
+        // チェック = オーバーレイを触れる、と読める向きで出す。
+        _clickable = new ToolStripMenuItem();
+        _clickable.Click += (_, _) => ChooseClickable();
+
+        SyncClickThrough(clickThrough);
 
         _settings = new ToolStripMenuItem("", null, (_, _) => openSettings());
         _setup = new ToolStripMenuItem("", null, (_, _) => openSetup());
@@ -112,6 +137,7 @@ public sealed class TrayIcon : IDisposable
         menu.Items.Add(_toggle);
         menu.Items.Add(_layers);
         menu.Items.Add(_mode);
+        menu.Items.Add(_clickable);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_settings);
         menu.Items.Add(_setup);
@@ -149,10 +175,14 @@ public sealed class TrayIcon : IDisposable
         _mode.Text = UiText.DisplayMode;
         _layersOnly.Text = UiText.ModeLayersOnly;
         _layersOnly.ToolTipText = UiText.ModeLayersOnlyTip;
+        _selected.Text = UiText.ModeSelected;
+        _selected.ToolTipText = UiText.ModeSelectedTip;
         _always.Text = UiText.ModeAlways;
         _always.ToolTipText = UiText.ModeAlwaysTip;
+        _clickable.Text = UiText.Clickable;
+        _clickable.ToolTipText = UiText.ClickableTip;
         _settings.Text = UiText.Settings;
-        _setup.Text = UiText.SetupMenu;
+        _setup.Text = _setupInProgress ? UiText.SetupMenuContinue : UiText.SetupMenu;
         _reload.Text = UiText.ReloadKeymap;
         _warnings.Text = UiText.ViewWarnings(_currentWarnings.Count);
         _exit.Text = UiText.Exit;
@@ -164,10 +194,16 @@ public sealed class TrayIcon : IDisposable
     /// キーマップや設定を読み直したときに、メニューの中身を合わせる。
     /// </summary>
     /// <param name="layerShortcut">レイヤー番号 → 手で表示するショートカットの表記。無ければ null。</param>
+    /// <param name="clickThroughHotkey">クリックの受け取りを切り替えるショートカットの表記。無ければ null。</param>
     public void Configure(
-        string toggleHotkey, IReadOnlyList<(int Id, string Name)> layers, Func<int, string?> layerShortcut)
+        string toggleHotkey, IReadOnlyList<(int Id, string Name)> layers, Func<int, string?> layerShortcut,
+        bool setupInProgress, string? clickThroughHotkey)
     {
         _toggle.ShortcutKeyDisplayString = toggleHotkey;
+        _clickable.ShortcutKeyDisplayString = clickThroughHotkey;
+
+        _setupInProgress = setupInProgress;
+        _setup.Text = setupInProgress ? UiText.SetupMenuContinue : UiText.SetupMenu;
 
         foreach (var old in _layers.DropDownItems.Cast<ToolStripItem>().ToList()) old.Dispose();
 
@@ -182,18 +218,29 @@ public sealed class TrayIcon : IDisposable
         _layers.Enabled = layers.Count > 0;
     }
 
-    private void ChooseMode(bool always)
+    private void ChooseMode(string mode)
     {
         if (_suppressModeEvents) return;
 
-        SyncAlwaysVisible(always);
-        _setAlwaysVisible(always);
+        SyncDisplayMode(mode);
+        _setDisplayMode(mode);
+    }
+
+    private void ChooseClickable()
+    {
+        if (_suppressClickableEvents) return;
+
+        // ToolStripMenuItem は CheckOnClick ではないので、押しただけでは変わらない。押したあとの向きを自分で決める。
+        var clickable = !_clickable.Checked;
+
+        SyncClickThrough(!clickable);
+        _setClickThrough(!clickable);
     }
 
     /// <summary>
     /// 有効・無効をメニュー・ツールチップ・アイコンに反映する。
     ///
-    /// 「L1 以上のときだけ表示」では、無効にしても画面上は何も変わらない
+    /// 「L1 以上のときだけ表示」などでは、無効にしても画面上は何も変わらない
     /// （もともと出ていない）。切り替わったことが分かる場所が要る。
     /// </summary>
     public void ShowState(bool enabled, bool notify)
@@ -211,14 +258,25 @@ public sealed class TrayIcon : IDisposable
     }
 
     /// <summary>設定を読み直したときに、選択状態を実際の設定に合わせ直す。</summary>
-    public void SyncAlwaysVisible(bool always)
+    /// <param name="mode"><see cref="DisplayModes"/> のどれか。</param>
+    public void SyncDisplayMode(string mode)
     {
         _suppressModeEvents = true;
 
-        _always.Checked = always;
-        _layersOnly.Checked = !always;
+        _layersOnly.Checked = mode == DisplayModes.LayersOnly;
+        _selected.Checked = mode == DisplayModes.SelectedLayers;
+        _always.Checked = mode == DisplayModes.Always;
 
         _suppressModeEvents = false;
+    }
+
+    /// <summary>設定を読み直したときに、チェックを実際の設定に合わせ直す。</summary>
+    /// <param name="clickThrough">クリックを素通しする設定か。チェックはその裏返し。</param>
+    public void SyncClickThrough(bool clickThrough)
+    {
+        _suppressClickableEvents = true;
+        _clickable.Checked = !clickThrough;
+        _suppressClickableEvents = false;
     }
 
     /// <summary>

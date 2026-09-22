@@ -1,110 +1,131 @@
-# 設定ファイル（config.json）
+# The settings file (config.json)
 
-ふつうは設定画面（トレイ →「設定…」）から変えればよい。変更はその場で反映・保存される。
-ファイルを手で編集したときは、トレイの「キーマップを再読み込み」で反映される。
+日本語: [configuration.ja.md](configuration.ja.md)
 
-## 置き場所
+Normally you change these from the settings window (tray → "Settings…"). Changes take effect and are
+saved straight away. If you edit the file by hand, "Reload keymap" in the tray picks it up.
 
-`config.json` を **exe と同じフォルダ**から探し、無ければ `%APPDATA%\ZmkOverlay\` を見る。
-どちらにも無ければ初回起動として既定値を書き出し、初期設定の案内を開く。
-`--config <パス>` で起動すると、そのファイルを使う。
+## Where it lives
 
-パスは設定ファイルからの相対でも絶対でもよい。`_comment` のように、アプリが知らない項目は書き戻しても残る。
+`config.json` is looked up **next to the exe** first, then in `%APPDATA%\ZmkOverlay\`.
+If it is in neither, the app treats it as a first run: it writes the defaults and opens the setup guide.
+Starting with `--config <path>` uses that file instead.
 
-### 読めないとき
+Paths may be relative to the settings file, or absolute. Keys the app does not know — such as
+`_comment` — are kept when it writes the file back.
 
-起動できなくならないように、アプリの側で次のように扱う。
+### When it cannot be read
 
-- **ファイルが壊れている**（JSON として読めない）: `config.broken-<日時>.json` に移して、初回起動としてやり直す。
-  手で書いた内容は移したファイルに残っている
-- **キーマップが読めない**（ファイルを移した、など）: 設定ファイルはそのままにして、サンプルを表示して起動する。
-  初期設定の「キーマップの場所」が開くので、選び直す。選び直すまでは設定ファイルを書き換えない
-- **サンプルの場所が古い**（exe のフォルダを移した、前の版のサンプル名、など）: いまのサンプルを指すように直して保存する
+So that the app never becomes impossible to start, it handles these cases itself:
 
-`--config` で指定したファイルは開発用なので、壊れていても移さず、起動をやめる。
+- **The file is corrupt** (not valid JSON): it is moved to `config.broken-<date-time>.json` and the app
+  starts over as a first run. Anything you wrote by hand is still in the moved file
+- **The keymap cannot be read** (you moved the file, say): the settings file is left alone and the app
+  starts with the sample shown. Setup opens at "Where is your keymap?" so you can choose again.
+  Until you do, the settings file is not rewritten
+- **The sample path is stale** (you moved the exe's folder, or it names a sample from an older version):
+  it is repaired to point at the current sample and saved
 
-## 項目
+A file given with `--config` is for development, so a corrupt one is not moved aside — the app stops instead.
 
-| キー | 既定値 | 意味 |
+## Keys
+
+| Key | Default | Meaning |
 |---|---|---|
-| `language` | `auto` | 表示言語。`ja` / `en`。`auto` は Windows の表示言語に従う |
-| `displayMode` | `layersOnly` | 有効のときの見せ方。`layersOnly` = L1 以上にいるあいだだけ表示 / `always` = 常に表示 |
-| `keyUnitPx` | `44` | キー 1u のピクセル数。全体の大きさはこれで決まる |
-| `opacity` | `0.88` | オーバーレイの不透明度 |
+| `language` | `auto` | Display language. `ja` / `en`. `auto` follows the Windows display language |
+| `displayMode` | `layersOnly` | How it shows while enabled. `layersOnly` = only while you are on layer 1 or above / `selectedLayers` = only while you are on a layer that is not in `hiddenLayers` / `always` = always shown. An unknown value is treated as `layersOnly` |
+| `hiddenLayers` | `[0]` | Layer numbers not to show in `selectedLayers` mode, e.g. `[0, 1]`. Remove `0` to show L0 when no layer key is held. Layers not listed — including ones you add later — are shown |
+| `keyUnitPx` | `44` | Pixels for one key unit (1u). This sets the overall size |
+| `opacity` | `0.88` | Opacity of the overlay |
 | `position` | `BottomCenter` | `BottomCenter` / `BottomLeft` / `BottomRight` / `TopCenter` / `TopLeft` / `TopRight` / `Center` |
-| `margin` | `48` | 画面端からの余白 |
-| `keyboardLayout` | （下記） | PC のキーボード配列（`jis` / `us`）。同じキーでも出る記号が変わる。初回起動時に PC のキーボードに合わせて書き込む（日本語キーボードなら `jis`、それ以外は `us`）。項目が無いときは `jis` |
-| `toggleHotkey` | `Ctrl+Alt+K` | 有効 / 無効の切り替え。`{"modifiers": ["Ctrl","Alt"], "key": "K"}`。初回起動時、この PC の配列で Ctrl+Alt+K が文字の入力に使われる（AltGr）なら、`Ctrl+Alt+Shift+K`、それも使われるなら `Ctrl+Alt+F12` を書き込む |
-| `enableManualLayerKeys` | `true` | ショートカットでレイヤーを手で表示する |
-| `layerHotkeys` | なし | レイヤー番号 → ショートカット。例 `{"1": {"modifiers": ["Ctrl","Shift"], "key": "Q"}}`。書かなければ `Ctrl+Alt+<番号>`（0〜9）。ただしその組み合わせがこの PC の配列で文字の入力に使われるなら割り当てない。`key` を空にすると割り当てない |
-| `layerSync.enabled` | `true` | キーボードのレイヤーに追従する |
-| `layerSync.mode` | `hold` | `hold` = 押しているあいだだけ表示 / `toggle` = 押すたびに切り替え |
-| `layerSync.pollIntervalMs` | `15` | 合図キーが離されたかを見に行く間隔 |
-| `layerSync.graceMs` | `150` | 押下を観測できないまま経過したら離されたとみなす時間 |
-| `layoutFile` | `data/layouts/corne.json` | 手書き JSON の物理レイアウト（ZMK のソースを使わないとき）。既定は同梱のサンプル |
-| `keymapFile` | `data/keymaps/corne.json` | 手書き JSON のキーマップ（同上） |
+| `margin` | `48` | Distance from the screen edge. Not used when `position` is `Center` |
+| `offsetX` / `offsetY` | `0` | Distance (px) from where `position` puts it. Written when you drag the overlay. Choosing a `position` again resets it to 0 |
+| `clickThrough` | `true` | Whether clicks pass through to the app underneath. Set it to `false` and the overlay takes clicks and drags instead (pick a layer with the tabs along the top, drag the overlay where you want it). Either way it never takes focus from the app you are typing in |
+| `keyboardLayout` | (see below) | This PC's keyboard layout (`jis` / `us`). The same key types a different symbol depending on it. On the first run it is written to match your keyboard (`jis` for a Japanese keyboard, `us` otherwise). If the key is missing, `jis` is assumed |
+| `toggleHotkey` | `Ctrl+Alt+K` | Enables / disables the overlay. `{"modifiers": ["Ctrl","Alt"], "key": "K"}`. On the first run, if Ctrl+Alt+K types a character with this PC's layout (AltGr), `Ctrl+Alt+Shift+K` is written instead, or `Ctrl+Alt+F12` if that is taken too |
+| `clickThroughHotkey` | none | Switches `clickThrough`. Written like `toggleHotkey`. Nothing is assigned by default, because which combinations are free differs per PC. An empty `key` means no shortcut |
+| `enableManualLayerKeys` | `true` | Show layers by hand with shortcuts |
+| `layerHotkeys` | none | Layer number → shortcut, e.g. `{"1": {"modifiers": ["Ctrl","Shift"], "key": "Q"}}`. Without an entry, `Ctrl+Alt+<number>` (0–9) is used — unless that combination types a character with this PC's layout, in which case nothing is assigned. An empty `key` means no shortcut |
+| `layerSync.enabled` | `true` | Follow the keyboard's layers |
+| `layerSync.mode` | `hold` | `hold` = shown while the key is held / `toggle` = toggled on each press |
+| `layerSync.pollIntervalMs` | `15` | How often the signal key is checked for release |
+| `layerSync.graceMs` | `150` | How long to wait before assuming a press that was never observed has been released |
+| `setupStep` | none | The step the setup guide opens at next. It is set when you close setup early and cleared once you reach "You're all set". While it is set, the tray menu reads "Continue setup…". You can delete it by hand |
+| `layoutFile` | `data/layouts/corne.json` | Hand-written JSON physical layout, for when you are not reading ZMK sources. Defaults to the bundled sample |
+| `keymapFile` | `data/keymaps/corne.json` | Hand-written JSON keymap (same) |
 
-文字の入力に使われる組み合わせ（Shift+英字、AltGr で記号を打つ配列の Ctrl+Alt+数字 など）は、
-設定ファイルに書いてあっても登録しない。押さえるとその文字が打てなくなるため。登録しなかったことはトレイで知らせる。
+Combinations that type a character — Shift+letter, or Ctrl+Alt+digit on layouts where AltGr types symbols —
+are not registered even if the settings file asks for them, because holding them would stop you typing that
+character. The tray tells you when something was not registered.
 
-### ZMK のソースを読む（`zmk`）
+### Reading ZMK sources (`zmk`)
 
-`zmk.keymapFile` を指定すると、`.keymap` を読んで表示する。手書き JSON より優先される。
-設定例は [../data/config.zmk.example.json](../data/config.zmk.example.json)。
+Set `zmk.keymapFile` and the app reads your `.keymap` and shows it. This takes precedence over the
+hand-written JSON. There is an example at [../data/config.zmk.example.json](../data/config.zmk.example.json).
 
-| キー | 意味 |
+| Key | Meaning |
 |---|---|
-| `zmk.keymapFile` | `.keymap` ファイル |
-| `zmk.physicalLayoutFile` | 物理レイアウトを持つ `.dtsi`。省略すると下の順で探す |
-| `zmk.shieldLayoutFolder` | ZMK 本体から取ってきたシールド定義の保存先（「ZMK 本体から取得」で入る） |
-| `zmk.shield` | そのシールド名（例 `corne`） |
-| `zmk.source` | `local`（既定）または `github`。設定画面の「GitHub から読み込む」で取得すると `github` になる |
-| `zmk.github` | GitHub から読むときの取得元（`repository` / `branch` / `keymapPath`）。取り直しに使う |
-| `zmk.labelOverrides` | キーコードの表示差し替え。例 `{"INT4": "かな"}` |
-| `zmk.layerNames` | レイヤー名の差し替え。既定はノード名から作る（`default_layer` → `DEFAULT`） |
-| `zmk.signalKeys` | レイヤー番号 → 合図キー。キーマップから自動で読み取るので、普通は書かなくてよい。書くとそちらが優先され、空文字 `""` にすると追従しない |
+| `zmk.keymapFile` | The `.keymap` file |
+| `zmk.physicalLayoutFile` | A `.dtsi` holding the physical layout. Left out, it is looked up in the order below |
+| `zmk.shieldLayoutFolder` | Where a shield definition downloaded from ZMK is kept (filled in by "Get from ZMK") |
+| `zmk.shield` | That shield's name, e.g. `corne` |
+| `zmk.source` | `local` (default) or `github`. Fetching with "Load from GitHub" in the settings window sets `github` |
+| `zmk.github` | Where to fetch from (`repository` / `branch` / `keymapPath`). Used to fetch again |
+| `zmk.labelOverrides` | Replace how a keycode is shown, e.g. `{"INT4": "かな"}` |
+| `zmk.layerNames` | Replace a layer's name. By default it comes from the node name (`default_layer` → `DEFAULT`) |
+| `zmk.signalKeys` | Layer number → signal key. These are detected in the keymap automatically, so you normally leave this out. An entry here wins, and an empty string `""` means that layer is not followed |
 
-物理レイアウトを探す順:
+The physical layout is looked for in this order:
 
 1. `zmk.physicalLayoutFile`
-2. キーマップ自身
-3. キーマップのフォルダ以下の `.dtsi` / `.overlay`（zmk-config のシールド定義）
-4. `zmk.shieldLayoutFolder`（ZMK 本体から取ってきたもの）
-5. キーマップの書き方からの推定（推定したことは警告に出る）
+2. The keymap itself
+3. `.dtsi` / `.overlay` files under the keymap's folder (your zmk-config's shield definition)
+4. `zmk.shieldLayoutFolder` (what was downloaded from ZMK)
+5. A guess from how the keymap is written (the guess is reported as a warning)
 
-1 つのファイルに複数のレイアウトがあるとき（Corne の 5 列 / 6 列など）は、
-`chosen` で選ばれていてキー数が合うもの、キー数が合う最初のもの、の順で選ぶ。
+When one file holds several layouts — Corne's 5-column and 6-column, say — the app takes the one
+selected with `chosen` whose key count matches, then the first one whose key count matches.
 
-読めるもの:
+What it reads:
 
-- `#define`（オブジェクト形・関数形、多段展開）とローカルの `#include "..."`
-- ZMK の共有レイアウト `#include <layouts/...>`（ZMK 本体から取ってきた保存分か、PC にある zmk のソースの中にあるとき）
-- `LS()` / `LC()` / `LA()` / `LG()` の入れ子
-- キーマップ内で定義した hold-tap（`&hml` などの hold / tap の判別）とマクロ
-- `combos` と、条件付きレイヤー（`zmk,conditional-layers`）
-- JIS / US の差（`LS(N8)` は US なら `*`、JIS なら `(`）
-- `/delete-node/`・`/omit-if-no-ref/` などの devicetree の指示（読み飛ばす）
+- `#define` (object-like and function-like, expanded repeatedly) and local `#include "..."`
+- ZMK's shared layouts `#include <layouts/...>` (from what was downloaded from ZMK, or from ZMK sources on this PC)
+- Nested `LS()` / `LC()` / `LA()` / `LG()`
+- Hold-taps defined in the keymap (telling `&hml`'s hold from its tap, for example) and macros
+- `combos` and conditional layers (`zmk,conditional-layers`)
+- The JIS / US difference (`LS(N8)` is `*` on US and `(` on JIS)
+- Devicetree directives such as `/delete-node/` and `/omit-if-no-ref/` (skipped over)
 
-読まないもの:
+What it does not read:
 
-- `#include <...>` のシステムヘッダ（`<layouts/...>` を除く）。ZMK のソースが手元に無くても動くよう、キーコード名は内蔵表で解決する
-- `#if` 系の条件分岐。本文はそのまま残し、警告として通知する
-- zmk-helpers の `ZMK_LAYER(...)` のようなマクロで書いたキーマップ。展開できないので、その旨を伝えて読み込みをやめる
+- System headers `#include <...>` (apart from `<layouts/...>`). Keycode names are resolved from a built-in
+  table, so the app works without ZMK sources on hand
+- `#if` and friends. The body is left as written and reported as a warning
+- Keymaps written with macros such as zmk-helpers' `ZMK_LAYER(...)`. These cannot be expanded, so the app
+  says so and stops loading
 
-解釈できなかったキーコードやビヘイビアは、**名前をそのまま表示する**。
-空白にすると「キーが無い」のか「解釈できなかった」のか画面から区別できないため。
+Keycodes and behaviours it could not interpret are **shown by name**. Blanking them out would make
+"there is no key here" and "this could not be interpreted" look the same on screen.
 
-## 表示の考え方
+## How showing works
 
-**有効 / 無効（`Ctrl+Alt+K`）はマスタースイッチ**で、無効にしているあいだは何をしても表示されない。
-有効にしているあいだの見せ方を `displayMode` で選ぶ。
+**Enable / disable (`Ctrl+Alt+K`) is the master switch**: while it is disabled, nothing is shown whatever
+else you do. `displayMode` chooses how it shows while it is enabled.
 
-| | 無効のとき | 有効のとき |
+| | While disabled | While enabled |
 |---|---|---|
-| `layersOnly`（既定） | 出ない | **L1 以上にいるあいだだけ表示**。L0 では出ない |
-| `always` | 出ない | 常時表示。レイヤーに応じて中身が変わり、離すと L0 に戻る |
+| `layersOnly` (default) | Not shown | **Shown only while you are on layer 1 or above.** Not shown on L0 |
+| `selectedLayers` | Not shown | **Shown only while you are on a layer that is not in `hiddenLayers`.** L0 can be chosen too |
+| `always` | Not shown | Always shown. The contents follow the active layer, and go back to L0 when you let go |
 
-L0（ベースレイヤー）が自動で出ないのは、合図キーを持たないため。
+L0 (the base layer) is not shown in `layersOnly` because it is the state of holding nothing.
 
-複数のレイヤーキーを同時に押しているときは、ZMK と同じく番号の大きいレイヤーを表示する。
-条件付きレイヤー（Lower + Raise で Adjust など）は、その組み合わせを押しているあいだ表示する。
+`selectedLayers` exists so that layers you use often and already know stay out of your way.
+If L0 is shown and you enter a layer that is not, the overlay hides — leaving L0 up would show a set of
+keys different from the ones actually in effect. The layers you uncheck under
+Settings → Display → "Show only on the layers I choose" are the ones that go into `hiddenLayers`.
+
+A layer you bring up by hand, with Ctrl+Alt+digit or from the tray, is shown in every mode.
+
+While several layer keys are held, the highest-numbered layer is shown, as in ZMK. A conditional layer
+(Adjust from Lower + Raise, say) is shown while that combination is held.

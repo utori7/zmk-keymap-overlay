@@ -3,7 +3,7 @@
 #   - the sample data next to it
 #   - README.md, README.ja.md, LICENSE and THIRD-PARTY-NOTICES.md
 #   - licenses\ for the .NET runtime that the exe bundles
-#   - the images and docs\configuration.md that the READMEs link to
+#   - the images and docs\configuration*.md that the READMEs link to
 #
 #   powershell -File tools\publish.ps1
 #
@@ -52,7 +52,9 @@ foreach ($doc in 'README.md', 'README.ja.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md
 # The READMEs link to these. Without them the images are broken in the unzipped copy.
 $docs = Join-Path $staging 'docs'
 New-Item -ItemType Directory -Force (Join-Path $docs 'images') | Out-Null
-Copy-Item (Join-Path $root 'docs\configuration.md') $docs
+foreach ($doc in 'configuration.md', 'configuration.ja.md') {
+    Copy-Item (Join-Path $root "docs\$doc") $docs
+}
 Copy-Item (Join-Path $root 'docs\images\*.png') (Join-Path $docs 'images')
 
 # The single exe bundles the .NET runtime (MIT). Ship its license and notices with it.

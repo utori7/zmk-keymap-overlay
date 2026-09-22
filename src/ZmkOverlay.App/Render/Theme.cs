@@ -31,6 +31,11 @@ internal static class Theme
 
     public static readonly Brush TabActiveBg = Frozen("#FF3F6BC9");
     public static readonly Brush TabActiveText = Frozen("#FFFFFFFF");
+
+    // クリックを受け取る設定のときだけ使う、マウスを載せたときの色。
+    // 選択中のタブにも色を用意するのは、押せば固定が解けることを示すため。
+    public static readonly Brush TabHoverBg = Frozen("#26FFFFFF");
+    public static readonly Brush TabActiveHoverBg = Frozen("#FF5078D2");
     public static readonly Brush TabIdleText = Frozen("#99E6E8EE");
     public static readonly Brush TabUnavailableText = Frozen("#4DE6E8EE");
     public static readonly Brush TabUnavailableOutline = Frozen("#38E6E8EE");

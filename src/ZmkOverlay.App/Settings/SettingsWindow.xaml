@@ -37,9 +37,10 @@
 
         <ListBox x:Name="Nav" Grid.Column="0" Margin="12,16,4,16" BorderThickness="0"
                  Background="Transparent" SelectionChanged="OnNavChanged">
-            <ListBoxItem x:Name="NavKeyboard" />
+            <!-- 並びは SettingsPage と揃えること。ShowPage は番号で引いている。 -->
             <ListBoxItem x:Name="NavDisplay" />
-            <ListBoxItem x:Name="NavSync" />
+            <ListBoxItem x:Name="NavLayers" />
+            <ListBoxItem x:Name="NavKeyboard" />
             <ListBoxItem x:Name="NavShortcuts" />
             <ListBoxItem x:Name="NavGeneral" />
         </ListBox>
@@ -56,76 +57,25 @@
             <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,24,0">
                 <Grid>
 
-                    <!-- ===== キーボード ===== -->
-                    <StackPanel x:Name="KeyboardPage">
-                        <TextBlock x:Name="SampleNote" Style="{StaticResource Note}" Opacity="1" FontWeight="SemiBold" />
-
-                        <!-- 一般の ZMK 利用者は GitHub 上だけで zmk-config を管理していることが多いので、こちらを先に置く。 -->
-                        <TextBlock x:Name="GitHubSection" Style="{StaticResource Section}" Margin="0,8,0,8" />
-                        <TextBlock x:Name="GitHubNote" Style="{StaticResource Note}" />
-                        <DockPanel Margin="0,4">
-                            <Button x:Name="GitHubFetch" DockPanel.Dock="Right" MinWidth="96" Margin="8,0,0,0" Click="OnGitHubFetch" />
-                            <TextBox x:Name="GitHubUrl" VerticalContentAlignment="Center" />
-                        </DockPanel>
-                        <DockPanel x:Name="GitHubChoice" Margin="0,4" Visibility="Collapsed">
-                            <TextBlock x:Name="GitHubKeymapLabel" Style="{StaticResource FieldLabel}" />
-                            <Button x:Name="GitHubUse" DockPanel.Dock="Right" MinWidth="96" Margin="8,0,0,0" Click="OnGitHubUse" />
-                            <ComboBox x:Name="GitHubKeymapBox" />
-                        </DockPanel>
-                        <DockPanel Margin="0,4">
-                            <Button x:Name="GitHubRefresh" DockPanel.Dock="Right" MinWidth="96" Margin="8,0,0,0"
-                                    Click="OnGitHubRefresh" Visibility="Collapsed" />
-                            <TextBlock x:Name="GitHubStatus" TextWrapping="Wrap" VerticalAlignment="Center" Opacity="0.85" />
-                        </DockPanel>
-
-                        <TextBlock x:Name="KeymapSection" Style="{StaticResource Section}" />
-                        <DockPanel Margin="0,4">
-                            <TextBlock x:Name="KeymapFileLabel" Style="{StaticResource FieldLabel}" />
-                            <Button x:Name="KeymapBrowse" DockPanel.Dock="Right" MinWidth="96" Margin="8,0,0,0" Click="OnBrowseKeymap" />
-                            <TextBlock x:Name="KeymapPath" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                        </DockPanel>
-                        <DockPanel Margin="0,4">
-                            <TextBlock x:Name="LayoutFileLabel" Style="{StaticResource FieldLabel}" />
-                            <Button x:Name="LayoutBrowse" DockPanel.Dock="Right" MinWidth="96" Margin="8,0,0,0" Click="OnBrowseLayout" />
-                            <Button x:Name="LayoutAuto" DockPanel.Dock="Right" Margin="8,0,0,0" Click="OnLayoutAuto" />
-                            <TextBlock x:Name="LayoutPath" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                        </DockPanel>
-                        <Button x:Name="ReloadButton" HorizontalAlignment="Left" Margin="0,10,0,0" Click="OnReload" />
-
-                        <!-- Corne など、キーの並びが ZMK 本体にあるキーボード向け。通信はボタンを押したときだけ。 -->
-                        <StackPanel x:Name="ZmkLayoutPanel">
-                            <TextBlock x:Name="ZmkLayoutSection" Style="{StaticResource Section}" />
-                            <TextBlock x:Name="ZmkLayoutNote" Style="{StaticResource Note}" />
-                            <DockPanel Margin="0,4">
-                                <TextBlock x:Name="ZmkShieldLabel" Style="{StaticResource FieldLabel}" />
-                                <Button x:Name="ZmkFetch" DockPanel.Dock="Right" MinWidth="120" Margin="8,0,0,0" Click="OnZmkFetch" />
-                                <TextBox x:Name="ZmkShieldBox" VerticalContentAlignment="Center" />
-                            </DockPanel>
-                            <TextBlock x:Name="ZmkStatus" TextWrapping="Wrap" Opacity="0.85" />
-                        </StackPanel>
-
-                        <TextBlock x:Name="HostLayoutSection" Style="{StaticResource Section}" />
-                        <StackPanel Orientation="Horizontal">
-                            <RadioButton x:Name="HostJis" GroupName="HostLayout" Margin="0,0,24,0" Checked="OnHostLayoutChecked" />
-                            <RadioButton x:Name="HostUs" GroupName="HostLayout" Checked="OnHostLayoutChecked" />
-                        </StackPanel>
-                        <TextBlock x:Name="HostLayoutNote" Style="{StaticResource Note}" />
-
-                        <TextBlock x:Name="LayerNamesSection" Style="{StaticResource Section}" />
-                        <TextBlock x:Name="LayerNamesNote" Style="{StaticResource Note}" />
-                        <StackPanel x:Name="LayerNamesList" />
-
-                        <TextBlock x:Name="WarningsSection" Style="{StaticResource Section}" />
-                        <TextBlock x:Name="NoWarnings" Style="{StaticResource Note}" />
-                        <TextBox x:Name="WarningsBox" IsReadOnly="True" TextWrapping="Wrap"
-                                 MaxHeight="180" VerticalScrollBarVisibility="Auto" />
-                    </StackPanel>
-
                     <!-- ===== 表示 ===== -->
-                    <StackPanel x:Name="DisplayPage" Visibility="Collapsed">
-                        <TextBlock x:Name="ShowWhenSection" Style="{StaticResource Section}" Margin="0,8,0,8" />
+                    <StackPanel x:Name="DisplayPage">
+                        <!--
+                          出ないのが正常な設定（L1 以上のときだけ）があるので、「壊れている」と「そういう設定」を
+                          ここで区別できるようにする。そのままでは出ようがない組み合わせのときは直し方まで出す。
+                        -->
+                        <TextBlock x:Name="StatusSection" Style="{StaticResource Section}" Margin="0,8,0,6" />
+                        <TextBlock x:Name="StatusText" TextWrapping="Wrap" />
+                        <TextBlock x:Name="StatusWhy" Style="{StaticResource Note}" Opacity="1"
+                                   FontWeight="SemiBold" Margin="0,6,0,0" Visibility="Collapsed" />
+
+                        <TextBlock x:Name="ShowWhenSection" Style="{StaticResource Section}" />
+                        <!-- 出る場面が少ない順に並べる。トレイの「表示の仕方」と同じ並び。 -->
                         <RadioButton x:Name="ModeLayersOnlyRadio" GroupName="Mode" Checked="OnModeChecked" />
                         <TextBlock x:Name="ModeLayersOnlyNote" Style="{StaticResource Note}" Margin="28,0,0,8" />
+                        <RadioButton x:Name="ModeSelectedRadio" GroupName="Mode" Checked="OnModeChecked" />
+                        <TextBlock x:Name="ModeSelectedNote" Style="{StaticResource Note}" Margin="28,0,0,4" />
+                        <!-- レイヤーごとのチェック。キーマップによって数が変わるのでコードで作る。この見せ方のときだけ出す。 -->
+                        <WrapPanel x:Name="ShownLayersList" ItemWidth="300" Margin="28,0,0,8" />
                         <RadioButton x:Name="ModeAlwaysRadio" GroupName="Mode" Checked="OnModeChecked" />
                         <TextBlock x:Name="ModeAlwaysNote" Style="{StaticResource Note}" Margin="28,0,0,8" />
 
@@ -153,6 +103,20 @@
                                     IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="OnMarginChanged" />
                         </DockPanel>
 
+                        <TextBlock x:Name="MarginCenterNote" Style="{StaticResource Note}" Margin="0,2,0,0"
+                                   Visibility="Collapsed" />
+                        <TextBlock x:Name="RangeNote" Style="{StaticResource Note}" Margin="0,6,0,0"
+                                   Visibility="Collapsed" />
+
+                        <!-- 位置の話の続きなので、余白のすぐ下に置く。ドラッグで動かせるのはここを入れたときだけ。 -->
+                        <TextBlock x:Name="ClickableSection" Style="{StaticResource Section}" />
+                        <CheckBox x:Name="ClickableBox" Click="OnClickableClick" />
+                        <TextBlock x:Name="ClickableNote" Style="{StaticResource Note}" Margin="28,0,0,6" />
+                        <TextBlock x:Name="ResetOffsetNote" Style="{StaticResource Note}" Margin="28,0,0,4"
+                                   Visibility="Collapsed" />
+                        <Button x:Name="ResetOffsetButton" HorizontalAlignment="Left" Margin="28,0,0,4"
+                                Click="OnResetOffset" Visibility="Collapsed" />
+
                         <TextBlock x:Name="PreviewSection" Style="{StaticResource Section}" />
                         <!-- 半透過の見え方が分かるよう、画面の壁紙に近い色の上に置く。 -->
                         <Border CornerRadius="8" Padding="16" MinHeight="120">
@@ -168,31 +132,101 @@
                         </Border>
                     </StackPanel>
 
-                    <!-- ===== レイヤー追従 ===== -->
-                    <StackPanel x:Name="SyncPage" Visibility="Collapsed">
-                        <TextBlock x:Name="SyncExplain" Style="{StaticResource Note}" Margin="0,8,0,8" />
-                        <Button x:Name="OpenFirmwareSetup" HorizontalAlignment="Left" Margin="0,0,0,14"
-                                Click="OnOpenFirmwareSetup" />
+                    <!-- ===== レイヤー ===== -->
+                    <!-- レイヤーごとの設定（名前・合図キー）はここに集める。手で出すショートカットだけはショートカットのページ。 -->
+                    <StackPanel x:Name="LayersPage" Visibility="Collapsed">
+                        <TextBlock x:Name="SyncExplain" Style="{StaticResource Note}" Margin="0,8,0,10" />
                         <CheckBox x:Name="SyncEnabledBox" Click="OnSyncEnabledClick" />
                         <StackPanel Margin="28,8,0,0">
                             <RadioButton x:Name="SyncHoldRadio" GroupName="SyncMode" Margin="0,0,0,4" Checked="OnSyncModeChecked" />
                             <RadioButton x:Name="SyncToggleRadio" GroupName="SyncMode" Checked="OnSyncModeChecked" />
                         </StackPanel>
 
-                        <TextBlock x:Name="SignalSection" Style="{StaticResource Section}" />
-                        <TextBlock x:Name="SignalNote" Style="{StaticResource Note}" />
+                        <TextBlock x:Name="LayerTableSection" Style="{StaticResource Section}" />
+                        <TextBlock x:Name="LayerTableNote" Style="{StaticResource Note}" />
+                        <!-- 列の幅は BuildLayerTable の行と揃えること。 -->
                         <Grid Margin="0,4,0,6">
                             <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="56" />
                                 <ColumnDefinition Width="240" />
                                 <ColumnDefinition Width="160" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <TextBlock x:Name="ColumnLayer" FontWeight="SemiBold" />
-                            <TextBlock x:Name="ColumnSignal" Grid.Column="1" FontWeight="SemiBold" />
-                            <TextBlock x:Name="ColumnTest" Grid.Column="2" FontWeight="SemiBold" />
+                            <TextBlock x:Name="ColumnName" Grid.Column="1" FontWeight="SemiBold" />
+                            <TextBlock x:Name="ColumnSignal" Grid.Column="2" FontWeight="SemiBold" />
+                            <TextBlock x:Name="ColumnTest" Grid.Column="3" FontWeight="SemiBold" />
                         </Grid>
-                        <StackPanel x:Name="SignalList" />
+                        <StackPanel x:Name="LayerTable" />
                         <TextBlock x:Name="SignalTestHint" Style="{StaticResource Note}" Margin="0,12,0,0" />
+                        <Button x:Name="OpenFirmwareSetup" HorizontalAlignment="Left" Margin="0,10,0,0"
+                                Click="OnOpenFirmwareSetup" />
+                    </StackPanel>
+
+                    <!-- ===== キーボード ===== -->
+                    <!-- 初期設定と同じ順（読み込み元 → キーの並び）。 -->
+                    <StackPanel x:Name="KeyboardPage" Visibility="Collapsed">
+                        <TextBlock x:Name="SampleNote" Style="{StaticResource Note}" Opacity="1" FontWeight="SemiBold" />
+
+                        <!-- 一般の ZMK 利用者は GitHub 上だけで zmk-config を管理していることが多いので、こちらを先に置く。 -->
+                        <TextBlock x:Name="GitHubSection" Style="{StaticResource Section}" Margin="0,8,0,8" />
+                        <TextBlock x:Name="GitHubNote" Style="{StaticResource Note}" />
+                        <DockPanel Margin="0,4">
+                            <Button x:Name="GitHubFetch" DockPanel.Dock="Right" MinWidth="96" Margin="8,0,0,0" Click="OnGitHubFetch" />
+                            <TextBox x:Name="GitHubUrl" VerticalContentAlignment="Center" />
+                        </DockPanel>
+                        <DockPanel x:Name="GitHubChoice" Margin="0,4" Visibility="Collapsed">
+                            <TextBlock x:Name="GitHubKeymapLabel" Style="{StaticResource FieldLabel}" />
+                            <Button x:Name="GitHubUse" DockPanel.Dock="Right" MinWidth="96" Margin="8,0,0,0" Click="OnGitHubUse" />
+                            <ComboBox x:Name="GitHubKeymapBox" />
+                        </DockPanel>
+                        <DockPanel Margin="0,4">
+                            <Button x:Name="GitHubRefresh" DockPanel.Dock="Right" MinWidth="96" Margin="8,0,0,0"
+                                    Click="OnGitHubRefresh" Visibility="Collapsed" />
+                            <TextBlock x:Name="GitHubStatus" TextWrapping="Wrap" VerticalAlignment="Center" Opacity="0.85" />
+                        </DockPanel>
+
+                        <TextBlock x:Name="KeymapSection" Style="{StaticResource Section}" />
+                        <DockPanel Margin="0,4">
+                            <TextBlock x:Name="KeymapFileLabel" Style="{StaticResource FieldLabel}" />
+                            <Button x:Name="KeymapBrowse" DockPanel.Dock="Right" MinWidth="96" Margin="8,0,0,0" Click="OnBrowseKeymap" />
+                            <TextBlock x:Name="KeymapPath" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        </DockPanel>
+
+                        <!-- GitHub から読んだときにも関わるので、読み込み元とは別の見出しにする。 -->
+                        <TextBlock x:Name="PhysicalLayoutSection" Style="{StaticResource Section}" />
+                        <DockPanel Margin="0,4">
+                            <TextBlock x:Name="LayoutFileLabel" Style="{StaticResource FieldLabel}" />
+                            <Button x:Name="LayoutBrowse" DockPanel.Dock="Right" MinWidth="96" Margin="8,0,0,0" Click="OnBrowseLayout" />
+                            <Button x:Name="LayoutAuto" DockPanel.Dock="Right" Margin="8,0,0,0" Click="OnLayoutAuto" />
+                            <TextBlock x:Name="LayoutPath" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        </DockPanel>
+
+                        <!-- Corne など、キーの並びが ZMK 本体にあるキーボード向け。通信はボタンを押したときだけ。 -->
+                        <StackPanel x:Name="ZmkLayoutPanel" Margin="0,8,0,0">
+                            <TextBlock x:Name="ZmkLayoutSection" FontWeight="SemiBold" Margin="0,4,0,4" />
+                            <TextBlock x:Name="ZmkLayoutNote" Style="{StaticResource Note}" />
+                            <DockPanel Margin="0,4">
+                                <TextBlock x:Name="ZmkShieldLabel" Style="{StaticResource FieldLabel}" />
+                                <Button x:Name="ZmkFetch" DockPanel.Dock="Right" MinWidth="120" Margin="8,0,0,0" Click="OnZmkFetch" />
+                                <TextBox x:Name="ZmkShieldBox" VerticalContentAlignment="Center" />
+                            </DockPanel>
+                            <TextBlock x:Name="ZmkStatus" TextWrapping="Wrap" Opacity="0.85" />
+                        </StackPanel>
+
+                        <TextBlock x:Name="HostLayoutSection" Style="{StaticResource Section}" />
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton x:Name="HostJis" GroupName="HostLayout" Margin="0,0,24,0" Checked="OnHostLayoutChecked" />
+                            <RadioButton x:Name="HostUs" GroupName="HostLayout" Checked="OnHostLayoutChecked" />
+                        </StackPanel>
+                        <TextBlock x:Name="HostLayoutNote" Style="{StaticResource Note}" />
+
+                        <!-- 警告を直したら読み直すので、再読み込みはここに置く。 -->
+                        <TextBlock x:Name="WarningsSection" Style="{StaticResource Section}" />
+                        <TextBlock x:Name="NoWarnings" Style="{StaticResource Note}" />
+                        <TextBox x:Name="WarningsBox" IsReadOnly="True" TextWrapping="Wrap"
+                                 MaxHeight="180" VerticalScrollBarVisibility="Auto" />
+                        <Button x:Name="ReloadButton" HorizontalAlignment="Left" Margin="0,10,0,0" Click="OnReload" />
                     </StackPanel>
 
                     <!-- ===== ショートカット ===== -->
@@ -205,6 +239,15 @@
                                      GotKeyboardFocus="OnHotkeyFocus" LostKeyboardFocus="OnHotkeyBlur"
                                      PreviewKeyDown="OnHotkeyKeyDown" />
                         </DockPanel>
+                        <!-- Tag は object 型で型変換が働かないので、見分けの印はコードビハインドで入れる。 -->
+                        <DockPanel Margin="0,4">
+                            <TextBlock x:Name="ClickThroughHotkeyLabel" Style="{StaticResource FieldLabel}" />
+                            <TextBox x:Name="ClickThroughHotkeyBox" Width="220" HorizontalAlignment="Left" IsReadOnly="True"
+                                     IsReadOnlyCaretVisible="False"
+                                     GotKeyboardFocus="OnHotkeyFocus" LostKeyboardFocus="OnHotkeyBlur"
+                                     PreviewKeyDown="OnHotkeyKeyDown" />
+                        </DockPanel>
+                        <TextBlock x:Name="ClickThroughHotkeyNote" Style="{StaticResource Note}" Margin="180,0,0,6" />
 
                         <TextBlock x:Name="LayerShortcutsSection" Style="{StaticResource Section}" />
                         <CheckBox x:Name="ManualKeysBox" Click="OnManualKeysClick" />
@@ -233,6 +276,12 @@
                             <TextBlock x:Name="VersionLabel" Style="{StaticResource FieldLabel}" />
                             <TextBlock x:Name="VersionText" VerticalAlignment="Center" />
                         </DockPanel>
+
+                        <!-- 画面に出していない設定があるので、一覧への入口をここに置く。 -->
+                        <WrapPanel Margin="0,14,0,0">
+                            <Button x:Name="ReadmeButton" Margin="0,0,8,8" Click="OnOpenReadme" />
+                            <Button x:Name="ConfigDocButton" Margin="0,0,8,8" Click="OnOpenConfigDoc" />
+                        </WrapPanel>
                     </StackPanel>
 
                 </Grid>

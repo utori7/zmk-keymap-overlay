@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Threading.Tasks;
@@ -17,11 +18,22 @@ using ZmkOverlay.Core.Text;
 
 namespace ZmkOverlay.App.Settings;
 
+/// <summary>
+/// ショートカットの入力欄が何に割り当てるものか。レイヤーの欄は Tag にレイヤー番号（int）を持つので、
+/// ここに並べるのはレイヤー以外だけ。
+/// </summary>
+internal enum HotkeyTarget
+{
+    Toggle,
+    ClickThrough,
+}
+
+/// <summary>設定画面のページ。左の一覧と同じ順に並べること（<see cref="SettingsWindow.ShowPage"/> は番号で引く）。</summary>
 public enum SettingsPage
 {
-    Keyboard,
     Display,
-    Sync,
+    Layers,
+    Keyboard,
     Shortcuts,
     General,
 }
@@ -79,7 +91,11 @@ public partial class SettingsWindow : Window
         InitializeComponent();
 
         _host = host;
-        _pages = new FrameworkElement[] { KeyboardPage, DisplayPage, SyncPage, ShortcutsPage, GeneralPage };
+        _pages = new FrameworkElement[] { DisplayPage, LayersPage, KeyboardPage, ShortcutsPage, GeneralPage };
+
+        // Tag は object 型で、XAML から入れると型変換が働かず文字列になる。見分けの印はここで入れる。
+        HotkeyBox.Tag = HotkeyTarget.Toggle;
+        ClickThroughHotkeyBox.Tag = HotkeyTarget.ClickThrough;
 
         _debounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
         _debounce.Tick += (_, _) =>
@@ -105,6 +121,13 @@ public partial class SettingsWindow : Window
         };
 
         VersionText.Text = ProjectLinks.AppVersion;
+
+        // 拡大率の高いノートで作業領域に収まらないと、下端に出す失敗の理由が画面の外に出る。
+        var work = SystemParameters.WorkArea;
+        MinHeight = Math.Min(MinHeight, work.Height);
+        MinWidth = Math.Min(MinWidth, work.Width);
+        Height = Math.Min(Height, work.Height);
+        Width = Math.Min(Width, work.Width);
 
         _ready = true;
 
@@ -205,41 +228,63 @@ public partial class SettingsWindow : Window
             HostJis.IsChecked = !us;
             HostUs.IsChecked = us;
 
-            LayerNamesNote.Text = fromZmk ? UiText.LayerNamesNote : UiText.SampleCannotChange;
-            BuildLayerNames(fromZmk);
-
             var warnings = _host.Warnings;
             WarningsBox.Text = string.Join(Environment.NewLine, warnings);
             WarningsBox.Visibility = warnings.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             NoWarnings.Visibility = warnings.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
 
             // 表示
-            ModeLayersOnlyRadio.IsChecked = !config.IsAlwaysVisible;
-            ModeAlwaysRadio.IsChecked = config.IsAlwaysVisible;
+            var mode = config.EffectiveDisplayMode;
+            ModeLayersOnlyRadio.IsChecked = mode == DisplayModes.LayersOnly;
+            ModeSelectedRadio.IsChecked = mode == DisplayModes.SelectedLayers;
+            ModeAlwaysRadio.IsChecked = mode == DisplayModes.Always;
 
+            ShownLayersList.Visibility = config.IsSelectedLayers ? Visibility.Visible : Visibility.Collapsed;
+            BuildShownLayers();
+
+            // スライダーは範囲で丸めるので、読み取りもスライダーの値に合わせる。
+            // 設定ファイルを手で書き換えて範囲の外になっているときは、その旨を下に出す（RefreshRangeNote）。
             SizeSlider.Value = config.KeyUnitPx;
-            SizeValue.Text = $"{config.KeyUnitPx:0}px";
+            SizeValue.Text = $"{SizeSlider.Value:0}px";
             OpacitySlider.Value = Math.Round(config.Opacity * 100);
-            OpacityValue.Text = $"{config.Opacity * 100:0}%";
+            OpacityValue.Text = $"{OpacitySlider.Value:0}%";
             MarginSlider.Value = config.Margin;
-            MarginValue.Text = $"{config.Margin:0}px";
+            MarginValue.Text = $"{MarginSlider.Value:0}px";
 
             var position = Array.FindIndex(Positions, p => p.Equals(config.Position, StringComparison.OrdinalIgnoreCase));
             PositionBox.SelectedIndex = Math.Max(0, position);
 
+            // 「画面の中央」では余白を使わない。動かせるままにすると、効かない値を触らせることになる。
+            var atCenter = config.Position.Equals("Center", StringComparison.OrdinalIgnoreCase);
+            MarginSlider.IsEnabled = !atCenter;
+            MarginValue.Opacity = atCenter ? 0.4 : 1.0;
+            MarginCenterNote.Visibility = atCenter ? Visibility.Visible : Visibility.Collapsed;
+
+            ClickableBox.IsChecked = config.IsInteractive;
+
+            // ドラッグで動かしたあとだけ、戻す入口を出す。同じ位置を選び直しても戻せないため。
+            var dragged = config.HasOffset ? Visibility.Visible : Visibility.Collapsed;
+            ResetOffsetNote.Visibility = dragged;
+            ResetOffsetButton.Visibility = dragged;
+
+            RefreshStatus();
+            RefreshRangeNote(config);
             RefreshPreview();
 
-            // レイヤー追従
+            // レイヤー
             SyncEnabledBox.IsChecked = config.LayerSync.Enabled;
             SyncHoldRadio.IsChecked = config.LayerSync.IsHoldMode;
             SyncToggleRadio.IsChecked = !config.LayerSync.IsHoldMode;
             SyncHoldRadio.IsEnabled = SyncToggleRadio.IsEnabled = config.LayerSync.Enabled;
 
-            SignalNote.Text = fromZmk ? UiText.SignalAutoNote : UiText.SampleCannotChange;
-            BuildSignalList(fromZmk && config.LayerSync.Enabled);
+            LayerTableNote.Text = fromZmk ? UiText.LayerTableNote : UiText.SampleCannotChange;
+            BuildLayerTable(namesEditable: fromZmk, signalsEditable: fromZmk && config.LayerSync.Enabled);
 
             // ショートカット。入力中は「押してください」を上書きしない。
-            if (!HotkeyBox.IsKeyboardFocused) HotkeyBox.Text = ShortcutText(null);
+            if (!HotkeyBox.IsKeyboardFocused) HotkeyBox.Text = ShortcutText(HotkeyBox.Tag);
+
+            if (!ClickThroughHotkeyBox.IsKeyboardFocused)
+                ClickThroughHotkeyBox.Text = ShortcutText(ClickThroughHotkeyBox.Tag);
             ManualKeysBox.IsChecked = config.EnableManualLayerKeys;
             BuildLayerShortcuts();
 
@@ -257,6 +302,80 @@ public partial class SettingsWindow : Window
     }
 
     /// <summary>
+    /// いまオーバーレイがどう振る舞うかを 1 行で出し、そのままでは出ようがないときは直し方も出す。
+    ///
+    /// 出ない理由は独立に複数ある（無効・見せ方・表示するレイヤーの選択・追従の有無・合図キーの有無）。
+    /// どれも「設定が正しくても出ない」ことがあるので、3 ページを見比べずに済むようにここへ集める。
+    /// </summary>
+    private void RefreshStatus()
+    {
+        var config = _host.Config;
+        var layers = _host.Keymap.Layers;
+
+        var state = _host.OverlayEnabled ? UiText.StateEnabled : UiText.StateDisabled;
+
+        var mode = config.EffectiveDisplayMode switch
+        {
+            DisplayModes.Always => UiText.ModeAlways,
+            DisplayModes.SelectedLayers => UiText.ModeSelected,
+            _ => UiText.ModeLayersOnly,
+        };
+
+        string follow;
+        if (!config.LayerSync.Enabled)
+        {
+            follow = UiText.StatusNotFollowing;
+        }
+        else
+        {
+            var auto = _host.Keymap.AutoShownLayerIds();
+            var followed = layers.Select(l => l.Index).Where(auto.Contains).ToList();
+
+            follow = followed.Count > 0
+                ? UiText.StatusFollowing(UiText.LayerList(followed))
+                : UiText.StatusFollowingNothing;
+        }
+
+        StatusText.Text = UiText.StatusLine(state, mode, follow);
+
+        // 出ようがない組み合わせ。上から順に、いちばん手前の原因だけを出す。
+        var baseId = layers.Count > 0 ? layers[0].Index : 0;
+        var showsAtRest = config.ShowsLayer(baseId, baseId);
+        var allHidden = config.IsSelectedLayers && layers.Count > 0
+            && layers.All(l => config.HiddenLayers.Contains(l.Index));
+
+        var why = !_host.OverlayEnabled ? UiText.StatusWhyDisabled(config.ToggleHotkey.ToString())
+            : allHidden ? UiText.StatusWhyNoShownLayers
+            : !showsAtRest && !config.LayerSync.Enabled && !config.EnableManualLayerKeys ? UiText.StatusWhyNoTrigger
+            : null;
+
+        StatusWhy.Text = why ?? "";
+        StatusWhy.Visibility = why is null ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    /// <summary>
+    /// 設定ファイルの値が、この画面で選べる範囲の外にあるとき。スライダーは端で止まるので、
+    /// 何も言わないと「動かしていないのに値が変わった」ように見える。
+    /// </summary>
+    private void RefreshRangeNote(AppConfig config)
+    {
+        var outside = new List<string>();
+
+        void Check(Slider slider, string label, double value)
+        {
+            if (value < slider.Minimum || value > slider.Maximum)
+                outside.Add($"{label}: {UiText.ValueOutOfRange(value)}");
+        }
+
+        Check(SizeSlider, UiText.SizeLabel, config.KeyUnitPx);
+        Check(OpacitySlider, UiText.OpacityLabel, Math.Round(config.Opacity * 100));
+        Check(MarginSlider, UiText.MarginLabel, config.Margin);
+
+        RangeNote.Text = string.Join(Environment.NewLine, outside);
+        RangeNote.Visibility = outside.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>
     /// オーバーレイと同じ部品で描く。入りきらなければ縮めるが、入るなら実際の大きさで見せる。
     /// </summary>
     private void RefreshPreview()
@@ -269,87 +388,128 @@ public partial class SettingsWindow : Window
         PreviewContent.Content = panel;
     }
 
-    private void BuildLayerNames(bool editable)
+    /// <summary>
+    /// 「選んだレイヤーのときだけ表示」のチェック。チェックを付ける＝表示する。
+    /// 設定ファイルには表示しない側（<see cref="AppConfig.HiddenLayers"/>）を持つ。
+    /// </summary>
+    private void BuildShownLayers()
     {
-        LayerNamesList.Children.Clear();
+        ShownLayersList.Children.Clear();
 
-        foreach (var layer in _host.Keymap.Layers)
+        var config = _host.Config;
+        var layers = _host.Keymap.Layers;
+        if (layers.Count == 0) return;
+
+        var baseId = layers[0].Index;
+        var autoShown = _host.Keymap.AutoShownLayerIds();
+
+        foreach (var layer in layers)
         {
             var id = layer.Index;
 
-            var row = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
+            // L0 に付けると何も押していないときにも出る、というのは名前だけでは分からない。
+            // 合図キーの無いレイヤーは、付けてもキーボードの操作では出ない。
+            // 追従を切っているときはどれも出ないので、全部に添えても読みにくくなるだけ（オーバーレイのタブの点線と同じ扱い）。
+            var suffix = id == baseId ? UiText.BaseLayerSuffix
+                : config.LayerSync.Enabled && !autoShown.Contains(id) ? UiText.NoSignalSuffix
+                : null;
 
-            row.Children.Add(new TextBlock
-            {
-                Text = $"L{id}",
-                Width = 48,
-                VerticalAlignment = VerticalAlignment.Center,
-            });
+            var content = new StackPanel { Orientation = Orientation.Horizontal };
+            content.Children.Add(new TextBlock { Text = $"L{id} {layer.Name}".TrimEnd() });
+            if (suffix is not null)
+                content.Children.Add(new TextBlock { Text = suffix, Opacity = 0.65 });
 
-            var box = new TextBox
+            var box = new CheckBox
             {
-                Text = layer.Name,
-                Width = 260,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                IsEnabled = editable,
+                Content = content,
+                IsChecked = !config.HiddenLayers.Contains(id),
+                Margin = new Thickness(0, 2, 16, 4),
             };
 
-            box.LostFocus += (_, _) => CommitLayerName(id, box.Text);
-            box.KeyDown += (_, e) =>
+            box.Click += (_, _) =>
             {
-                if (e.Key == Key.Enter) CommitLayerName(id, box.Text);
+                var show = box.IsChecked == true;
+
+                Apply(c =>
+                {
+                    c.HiddenLayers.RemoveAll(hidden => hidden == id);
+                    if (!show) c.HiddenLayers.Add(id);
+                    c.HiddenLayers.Sort();
+                });
             };
 
-            row.Children.Add(box);
-            LayerNamesList.Children.Add(row);
+            ShownLayersList.Children.Add(box);
         }
     }
 
-    private void CommitLayerName(int id, string text)
+    /// <summary>
+    /// レイヤーごとの名前・合図キー・テストの表。列の幅は XAML の見出しと揃える。
+    /// </summary>
+    private void BuildLayerTable(bool namesEditable, bool signalsEditable)
     {
-        var current = _host.Keymap.Layers.FirstOrDefault(l => l.Index == id)?.Name ?? "";
-        if (text.Trim() == current) return;
-
-        Apply(config =>
-        {
-            var key = id.ToString(CultureInfo.InvariantCulture);
-
-            // 空にしたら差し替えをやめ、キーマップに書かれた名前に戻す。
-            if (string.IsNullOrWhiteSpace(text)) config.Zmk.LayerNames.Remove(key);
-            else config.Zmk.LayerNames[key] = text.Trim();
-        });
-    }
-
-    private void BuildSignalList(bool editable)
-    {
-        SignalList.Children.Clear();
+        LayerTable.Children.Clear();
         _signalMarks.Clear();
 
         var layers = _host.Keymap.Layers;
 
-        // ベースレイヤーは合図キーを持たない（何も押していない状態そのもの）。
-        foreach (var layer in layers.Skip(1))
+        for (var slot = 0; slot < layers.Count; slot++)
         {
+            var layer = layers[slot];
             var id = layer.Index;
 
             var row = new Grid { Margin = new Thickness(0, 0, 0, 6) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(240) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-            row.Children.Add(new TextBlock
-            {
-                Text = $"L{id} {layer.Name}".TrimEnd(),
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-            });
+            row.Children.Add(new TextBlock { Text = $"L{id}", VerticalAlignment = VerticalAlignment.Center });
 
-            var combo = new ComboBox { Width = 140, HorizontalAlignment = HorizontalAlignment.Left, IsEnabled = editable };
+            var name = new TextBox
+            {
+                Text = layer.Name,
+                Width = 220,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                IsEnabled = namesEditable,
+            };
+
+            AutomationProperties.SetName(name, $"L{id} {UiText.ColumnName}");
+
+            name.LostFocus += (_, _) => CommitLayerName(id, name.Text);
+            name.KeyDown += (_, e) =>
+            {
+                if (e.Key == Key.Enter) CommitLayerName(id, name.Text);
+            };
+
+            Grid.SetColumn(name, 1);
+            row.Children.Add(name);
+
+            // ベースレイヤーは合図キーを持たない（何も押していない状態そのもの）。
+            if (slot == 0)
+            {
+                var none = new TextBlock
+                {
+                    Text = "—",
+                    Opacity = 0.4,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    ToolTip = UiText.BaseHasNoSignal,
+                };
+
+                Grid.SetColumn(none, 2);
+                row.Children.Add(none);
+                LayerTable.Children.Add(row);
+                continue;
+            }
+
+            var combo = new ComboBox { Width = 140, HorizontalAlignment = HorizontalAlignment.Left, IsEnabled = signalsEditable };
             combo.Items.Add(UiText.NoSignal);
             foreach (var key in SignalKeyChoices) combo.Items.Add(key);
 
             var selected = Array.FindIndex(SignalKeyChoices, k => k.Equals(layer.SignalKey, StringComparison.OrdinalIgnoreCase));
             combo.SelectedIndex = selected + 1;
+
+            AutomationProperties.SetName(combo, $"L{id} {UiText.ColumnSignal}");
 
             if (layer.DetectedSignalKey is { } detectedKey)
                 combo.ToolTip = UiText.DetectedFromKeymap(detectedKey);
@@ -369,17 +529,32 @@ public partial class SettingsWindow : Window
                     config.Zmk.SignalKeys[key] = chosen ?? "";   // 空文字は「追従しない」
             });
 
-            Grid.SetColumn(combo, 1);
+            Grid.SetColumn(combo, 2);
             row.Children.Add(combo);
 
             var mark = new TextBlock { VerticalAlignment = VerticalAlignment.Center, FontSize = 16 };
             SetMark(mark, _received.Contains(id));
-            Grid.SetColumn(mark, 2);
+            Grid.SetColumn(mark, 3);
             row.Children.Add(mark);
 
             _signalMarks[id] = mark;
-            SignalList.Children.Add(row);
+            LayerTable.Children.Add(row);
         }
+    }
+
+    private void CommitLayerName(int id, string text)
+    {
+        var current = _host.Keymap.Layers.FirstOrDefault(l => l.Index == id)?.Name ?? "";
+        if (text.Trim() == current) return;
+
+        Apply(config =>
+        {
+            var key = id.ToString(CultureInfo.InvariantCulture);
+
+            // 空にしたら差し替えをやめ、キーマップに書かれた名前に戻す。
+            if (string.IsNullOrWhiteSpace(text)) config.Zmk.LayerNames.Remove(key);
+            else config.Zmk.LayerNames[key] = text.Trim();
+        });
     }
 
     private void OnSignalReceived(int layerId)
@@ -429,6 +604,8 @@ public partial class SettingsWindow : Window
                 Text = ShortcutText(id),
             };
 
+            AutomationProperties.SetName(box, UiText.LayerShortcutUse(id));
+
             box.GotKeyboardFocus += OnHotkeyFocus;
             box.LostKeyboardFocus += OnHotkeyBlur;
             box.PreviewKeyDown += OnHotkeyKeyDown;
@@ -464,9 +641,9 @@ public partial class SettingsWindow : Window
         {
             Title = $"ZMK Keymap Overlay — {UiText.SettingsTitle}";
 
-            NavKeyboard.Content = UiText.PageKeyboard;
             NavDisplay.Content = UiText.PageDisplay;
-            NavSync.Content = UiText.PageSync;
+            NavLayers.Content = UiText.PageLayers;
+            NavKeyboard.Content = UiText.PageKeyboard;
             NavShortcuts.Content = UiText.PageShortcuts;
             NavGeneral.Content = UiText.PageGeneral;
 
@@ -480,6 +657,7 @@ public partial class SettingsWindow : Window
             KeymapSection.Text = UiText.SectionKeymap;
             KeymapFileLabel.Text = UiText.KeymapFileLabel;
             KeymapBrowse.Content = UiText.Browse;
+            PhysicalLayoutSection.Text = UiText.SectionPhysicalLayout;
             LayoutFileLabel.Text = UiText.LayoutFileLabel;
             LayoutBrowse.Content = UiText.Browse;
             LayoutAuto.Content = UiText.UseKeymapLayout;
@@ -492,40 +670,65 @@ public partial class SettingsWindow : Window
             HostJis.Content = UiText.HostJis;
             HostUs.Content = UiText.HostUs;
             HostLayoutNote.Text = UiText.HostLayoutNote;
-            LayerNamesSection.Text = UiText.SectionLayerNames;
             WarningsSection.Text = UiText.SectionWarnings;
             NoWarnings.Text = UiText.NoWarnings;
 
             ShowWhenSection.Text = UiText.SectionShowWhen;
             ModeLayersOnlyRadio.Content = UiText.ModeLayersOnly;
             ModeLayersOnlyNote.Text = UiText.ModeLayersOnlyTip;
+            ModeSelectedRadio.Content = UiText.ModeSelected;
+            ModeSelectedNote.Text = UiText.ModeSelectedTip;
             ModeAlwaysRadio.Content = UiText.ModeAlways;
             ModeAlwaysNote.Text = UiText.ModeAlwaysTip;
+            StatusSection.Text = UiText.SectionStatus;
+            MarginCenterNote.Text = UiText.MarginUnusedAtCenter;
             LookSection.Text = UiText.SectionLook;
             SizeLabel.Text = UiText.SizeLabel;
             OpacityLabel.Text = UiText.OpacityLabel;
             PositionLabel.Text = UiText.PositionLabel;
             MarginLabel.Text = UiText.MarginLabel;
             PreviewSection.Text = UiText.SectionPreview;
+            ClickableSection.Text = UiText.SectionClickable;
+            ClickableBox.Content = UiText.Clickable;
+            ClickableNote.Text = UiText.ClickableNote;
+            ResetOffsetNote.Text = UiText.ResetOffsetNote;
+            ResetOffsetButton.Content = UiText.ResetOffset;
 
             var position = PositionBox.SelectedIndex;
             PositionBox.Items.Clear();
             foreach (var p in Positions) PositionBox.Items.Add(UiText.PositionName(p));
             PositionBox.SelectedIndex = position;
 
+            // 項目名は Label ではなく TextBlock なので、入力欄と結び付かない。
+            // 名前の無いスライダーや入力欄が並ぶことになるため、ここで入れる。
+            AutomationProperties.SetName(SizeSlider, UiText.SizeLabel);
+            AutomationProperties.SetName(OpacitySlider, UiText.OpacityLabel);
+            AutomationProperties.SetName(MarginSlider, UiText.MarginLabel);
+            AutomationProperties.SetName(PositionBox, UiText.PositionLabel);
+            AutomationProperties.SetName(GitHubUrl, UiText.SectionGitHub);
+            AutomationProperties.SetName(GitHubKeymapBox, UiText.GitHubKeymapLabel);
+            AutomationProperties.SetName(ZmkShieldBox, UiText.ZmkShieldLabel);
+            AutomationProperties.SetName(WarningsBox, UiText.SectionWarnings);
+            AutomationProperties.SetName(HotkeyBox, UiText.ToggleHotkeyLabel);
+            AutomationProperties.SetName(ClickThroughHotkeyBox, UiText.ClickThroughHotkeyLabel);
+            AutomationProperties.SetName(LanguageBox, UiText.LanguageLabel);
+
             SyncExplain.Text = UiText.SyncExplain;
             OpenFirmwareSetup.Content = UiText.OpenFirmwareSetup;
             SyncEnabledBox.Content = UiText.SyncEnabled;
             SyncHoldRadio.Content = UiText.SyncHold;
             SyncToggleRadio.Content = UiText.SyncToggle;
-            SignalSection.Text = UiText.SectionSignalKeys;
+            LayerTableSection.Text = UiText.SectionLayerTable;
             ColumnLayer.Text = UiText.ColumnLayer;
+            ColumnName.Text = UiText.ColumnName;
             ColumnSignal.Text = UiText.ColumnSignal;
             ColumnTest.Text = UiText.ColumnTest;
             SignalTestHint.Text = UiText.SignalTestHint;
 
             HotkeyHint.Text = UiText.HotkeyHint;
             ToggleHotkeyLabel.Text = UiText.ToggleHotkeyLabel;
+            ClickThroughHotkeyLabel.Text = UiText.ClickThroughHotkeyLabel;
+            ClickThroughHotkeyNote.Text = UiText.ClickThroughHotkeyNote;
             LayerShortcutsSection.Text = UiText.SectionLayerShortcuts;
             ManualKeysBox.Content = UiText.ManualKeys;
             ManualKeysNote.Text = UiText.ManualKeysNote;
@@ -540,6 +743,8 @@ public partial class SettingsWindow : Window
 
             RunAtLoginBox.Content = UiText.RunAtLogin;
             RunAtLoginNote.Text = UiText.RunAtLoginTip;
+            ReadmeButton.Content = UiText.OpenReadme;
+            ConfigDocButton.Content = UiText.OpenConfigDoc;
             AboutSection.Text = UiText.SectionAbout;
             ConfigFileLabel.Text = UiText.ConfigFileLabel;
             OpenFolderButton.Content = UiText.OpenFolder;
@@ -742,8 +947,11 @@ public partial class SettingsWindow : Window
 
     private void OnModeChecked(object sender, RoutedEventArgs e)
     {
-        var always = ModeAlwaysRadio.IsChecked == true;
-        Apply(config => config.DisplayMode = always ? "always" : "layersOnly");
+        var mode = sender == ModeAlwaysRadio ? DisplayModes.Always
+            : sender == ModeSelectedRadio ? DisplayModes.SelectedLayers
+            : DisplayModes.LayersOnly;
+
+        Apply(config => config.DisplayMode = mode);
     }
 
     private void OnSizeChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -778,10 +986,34 @@ public partial class SettingsWindow : Window
         var index = PositionBox.SelectedIndex;
         if (index < 0) return;
 
-        Apply(config => config.Position = Positions[index]);
+        // ドラッグで動かした分を残すと、選んだ場所に来ない。基準を選び直したら捨てる。
+        Apply(config =>
+        {
+            config.Position = Positions[index];
+            config.OffsetX = 0;
+            config.OffsetY = 0;
+        });
     }
 
-    // ---- レイヤー追従 ----
+    /// <summary>
+    /// クリックとドラッグを受け取るかどうか。ほかの設定と違ってアプリ側に任せるのは、
+    /// 切り替えたときにオーバーレイが消えてしまわないよう、いま出ているレイヤーを押さえる必要があるため。
+    /// </summary>
+    private void OnClickableClick(object sender, RoutedEventArgs e)
+    {
+        if (!_ready || _loading) return;
+
+        _host.SetClickThrough(ClickableBox.IsChecked != true);
+    }
+
+    private void OnResetOffset(object sender, RoutedEventArgs e) =>
+        Apply(config =>
+        {
+            config.OffsetX = 0;
+            config.OffsetY = 0;
+        });
+
+    // ---- レイヤー ----
 
     private void OnSyncEnabledClick(object sender, RoutedEventArgs e)
     {
@@ -797,13 +1029,15 @@ public partial class SettingsWindow : Window
 
     // ---- ショートカット ----
     //
-    // 入力欄は「オーバーレイの有効 / 無効」の 1 つと、レイヤーごとの欄。
-    // Tag が null なら前者、レイヤー番号なら後者。記録の仕方は共通。
+    // 入力欄は「オーバーレイの有効 / 無効」「オーバーレイの操作」と、レイヤーごとの欄。
+    // Tag がレイヤー番号（int）ならレイヤーの欄、そうでなければ <see cref="HotkeyTarget"/>。記録の仕方は共通。
 
-    private string ShortcutText(object? target) =>
-        target is int layerId
-            ? _host.Config.ManualLayerHotkey(layerId)?.ToString() ?? UiText.NoShortcut
-            : _host.Config.ToggleHotkey.ToString();
+    private string ShortcutText(object? target) => target switch
+    {
+        int layerId => _host.Config.ManualLayerHotkey(layerId)?.ToString() ?? UiText.NoShortcut,
+        HotkeyTarget.ClickThrough => _host.Config.EffectiveClickThroughHotkey?.ToString() ?? UiText.NoShortcut,
+        _ => _host.Config.ToggleHotkey.ToString(),
+    };
 
     private void OnHotkeyFocus(object sender, KeyboardFocusChangedEventArgs e)
     {
@@ -823,7 +1057,8 @@ public partial class SettingsWindow : Window
         if (!_ready) return;
 
         // 入力をやめたら、「押してください」などの表示を実際の割り当てに戻す。
-        HotkeyBox.Text = ShortcutText(null);
+        HotkeyBox.Text = ShortcutText(HotkeyBox.Tag);
+        ClickThroughHotkeyBox.Text = ShortcutText(ClickThroughHotkeyBox.Tag);
         foreach (var box in _layerShortcutBoxes) box.Text = ShortcutText(box.Tag);
     }
 
@@ -832,6 +1067,7 @@ public partial class SettingsWindow : Window
         if (sender is not TextBox box) return;
 
         var layerTarget = box.Tag as int?;
+        var clickThroughTarget = box.Tag is HotkeyTarget.ClickThrough;
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
 
         // Tab は入力欄から抜ける手段として残す。
@@ -850,15 +1086,23 @@ public partial class SettingsWindow : Window
             return;
         }
 
-        // レイヤーの欄は Delete / BackSpace で割り当てを外せる。
+        // レイヤーとオーバーレイの操作の欄は、Delete / BackSpace で割り当てを外せる。どちらも任意の割り当て。
         // 有効 / 無効のキーは外させない。外すとアプリを呼び出す手段がトレイだけになる。
-        if (layerTarget is { } clearedLayer
-            && Keyboard.Modifiers == ModifierKeys.None
-            && key is Key.Delete or Key.Back)
+        if (Keyboard.Modifiers == ModifierKeys.None && key is Key.Delete or Key.Back)
         {
-            Nav.Focus();
-            Apply(config => config.LayerHotkeys[clearedLayer.ToString(CultureInfo.InvariantCulture)] = new HotkeySpec());
-            return;
+            if (layerTarget is { } clearedLayer)
+            {
+                Nav.Focus();
+                Apply(config => config.LayerHotkeys[clearedLayer.ToString(CultureInfo.InvariantCulture)] = new HotkeySpec());
+                return;
+            }
+
+            if (clickThroughTarget)
+            {
+                Nav.Focus();
+                Apply(config => config.ClickThroughHotkey = new HotkeySpec());
+                return;
+            }
         }
 
         var modifiers = new List<string>();
@@ -889,7 +1133,7 @@ public partial class SettingsWindow : Window
 
         // 同じ組み合わせを 2 か所に登録すると、後から登録したほうが黙って効かなくなる。
         // 入力欄に留まったまま理由を見せ、別の組み合わせを押してもらう。
-        if (FindConflict(spec, layerTarget) is { } conflict)
+        if (FindConflict(spec, box.Tag) is { } conflict)
         {
             box.Text = conflict;
             return;
@@ -900,17 +1144,29 @@ public partial class SettingsWindow : Window
 
         if (layerTarget is { } layerId)
             Apply(config => config.LayerHotkeys[layerId.ToString(CultureInfo.InvariantCulture)] = spec);
+        else if (clickThroughTarget)
+            Apply(config => config.ClickThroughHotkey = spec);
         else
             Apply(config => config.ToggleHotkey = spec);
     }
 
     /// <summary>その組み合わせがすでに何に使われているか。空いていれば null。</summary>
-    private string? FindConflict(HotkeySpec spec, int? layerTarget)
+    /// <param name="target">記録しようとしている欄の Tag。自分自身との衝突は数えない。</param>
+    private string? FindConflict(HotkeySpec spec, object? target)
     {
         var config = _host.Config;
 
-        if (layerTarget is not null && spec.SameAs(config.ToggleHotkey))
+        var layerTarget = target as int?;
+        var isClickThrough = target is HotkeyTarget.ClickThrough;
+        var isToggle = layerTarget is null && !isClickThrough;
+
+        if (!isToggle && spec.SameAs(config.ToggleHotkey))
             return UiText.ShortcutConflict(spec.ToString(), UiText.ToggleHotkeyLabel);
+
+        if (!isClickThrough
+            && config.EffectiveClickThroughHotkey is { } clickThrough
+            && spec.SameAs(clickThrough))
+            return UiText.ShortcutConflict(spec.ToString(), UiText.ClickThroughHotkeyLabel);
 
         foreach (var layer in _host.Keymap.Layers)
         {
@@ -955,6 +1211,12 @@ public partial class SettingsWindow : Window
         // 実体（スタートアップフォルダ）を見直して、チェックを実際の状態に合わせる。
         RunAtLoginBox.IsChecked = _host.RunAtLogin;
     }
+
+    // 表示言語に合わせた版をブラウザで開く。画面に出していない設定（合図の間隔など）はそこで見てもらう。
+    private void OnOpenReadme(object sender, RoutedEventArgs e) => SourceActions.OpenUrl(ProjectLinks.Readme);
+
+    private void OnOpenConfigDoc(object sender, RoutedEventArgs e) =>
+        SourceActions.OpenUrl(ProjectLinks.ConfigurationDoc);
 
     private void OnOpenFolder(object sender, RoutedEventArgs e)
     {

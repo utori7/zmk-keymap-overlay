@@ -238,6 +238,12 @@
                     <Border Style="{StaticResource Card}">
                         <StackPanel x:Name="TestList" />
                     </Border>
+                    <TextBlock x:Name="TestMarkNote" Style="{StaticResource Note}" />
+
+                    <!-- 合図が一つも届かないまま待たされている人向け。しばらく経ってから出す。 -->
+                    <Border x:Name="TestNoSignal" Style="{StaticResource Card}" Visibility="Collapsed">
+                        <TextBlock x:Name="TestNoSignalText" TextWrapping="Wrap" />
+                    </Border>
 
                     <!-- このアプリの書き換えが入っているときだけ出す。うまくいったという報告も集めたいので。 -->
                     <Border x:Name="TestReport" Style="{StaticResource Card}" Visibility="Collapsed">
@@ -252,10 +258,16 @@
                 <StackPanel x:Name="DonePage" Visibility="Collapsed">
                     <TextBlock x:Name="DoneTitle" Style="{StaticResource Heading}" />
                     <TextBlock x:Name="DoneLead" Style="{StaticResource Lead}" />
+                    <!-- 何も選ばずに「次へ」で来られるので、ここでも伝える。 -->
+                    <TextBlock x:Name="DoneSampleNote" Style="{StaticResource Note}" Opacity="1"
+                               FontWeight="SemiBold" Margin="0,0,0,10" Visibility="Collapsed" />
 
                     <TextBlock x:Name="DoneModeTitle" Style="{StaticResource CardTitle}" Margin="0,8,0,6" />
                     <RadioButton x:Name="DoneLayersOnly" GroupName="SetupMode" Checked="OnModeChecked" />
                     <TextBlock x:Name="DoneLayersOnlyNote" Style="{StaticResource Note}" Margin="28,0,0,6" />
+                    <!-- どのレイヤーで出すかのチェックは設定画面にだけ置く。ここでは選べることを知らせる。 -->
+                    <RadioButton x:Name="DoneSelected" GroupName="SetupMode" Checked="OnModeChecked" />
+                    <TextBlock x:Name="DoneSelectedNote" Style="{StaticResource Note}" Margin="28,0,0,6" />
                     <RadioButton x:Name="DoneAlways" GroupName="SetupMode" Checked="OnModeChecked" />
                     <TextBlock x:Name="DoneAlwaysNote" Style="{StaticResource Note}" Margin="28,0,0,6" />
 
@@ -266,8 +278,18 @@
             </Grid>
         </ScrollViewer>
 
-        <TextBlock x:Name="ErrorText" Grid.Row="2" Margin="0,8,0,0" Foreground="#FFC42B1C"
-                   TextWrapping="Wrap" Visibility="Collapsed" />
+        <!--
+          ボタンの行と同じく、スクロールの外に置く。どのステップでも同じ場所に出したいので。
+          お知らせ（成功に添える説明）と失敗は色を分ける。同じ赤で出すと、成功したのに失敗したと読める。
+        -->
+        <StackPanel Grid.Row="2">
+            <ProgressBar x:Name="BusyBar" Height="3" Margin="0,8,0,0" IsIndeterminate="True"
+                         Visibility="Collapsed" />
+            <TextBlock x:Name="NoticeText" Margin="0,8,0,0" Opacity="0.85"
+                       TextWrapping="Wrap" Visibility="Collapsed" />
+            <TextBlock x:Name="ErrorText" Margin="0,8,0,0" Foreground="#FFC42B1C"
+                       TextWrapping="Wrap" Visibility="Collapsed" />
+        </StackPanel>
 
         <DockPanel Grid.Row="3" Margin="0,16,0,0" LastChildFill="False">
             <Button x:Name="LaterButton" DockPanel.Dock="Left" MinWidth="100" Click="OnLater" />

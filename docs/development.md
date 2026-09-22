@@ -59,6 +59,39 @@ dotnet run --project src/ZmkOverlay.App -- --render-setup out      # 初期設�
 
 **ビルドに失敗したまま実行しないこと。** 古い exe はこの指定を知らず、普通に常駐して戻ってこない。
 
+### README の画像を撮り直す
+
+`docs/images/settings-display-{ja,en}.png` は「表示」のページを書き出して切り抜いたもの。
+利用者のキーマップやパスが写らないよう、テスト用の demo40 を読ませる。次の設定を
+どこかに保存して（パスはその置き場所からの相対）、`language` だけ `ja` / `en` に変えて 2 回書き出す。
+
+```json
+{
+  "language": "ja",
+  "keyUnitPx": 44,
+  "opacity": 0.88,
+  "position": "BottomCenter",
+  "margin": 48,
+  "keyboardLayout": "jis",
+  "displayMode": "selectedLayers",
+  "hiddenLayers": [0, 1],
+  "zmk": {
+    "keymapFile": "tests/fixtures/zmk-config/config/demo40.keymap",
+    "physicalLayoutFile": "tests/fixtures/zmk-config/config/boards/shields/demo40/demo40.dtsi",
+    "signalKeys": { "1": "F13", "2": "F14", "3": "F15", "4": "F16", "5": "F17" }
+  },
+  "toggleHotkey": { "modifiers": ["Ctrl", "Alt"], "key": "K" },
+  "layerSync": { "enabled": true, "mode": "hold" }
+}
+```
+
+- **合図キーは全レイヤーに入れる。** 入れないとタブが点線になり、チェックにも「（合図キーなし）」が付く。
+  「いまの状態」も「追従できるレイヤーがありません」になる
+- **`keyboardLayout` は英語版も `jis`。** demo40 は JIS 専用のキー（`INT3` / `INT4` / `INT5`）を使うので、
+  `us` にすると ¥ や 変換 ではなく生のキーコード名が出る
+- 切り抜きは幅そのまま、高さは中身の最後の行 + 20px（下の余白を揃えるため）
+- 選択色は Windows のアクセントカラーがそのまま出る。撮り直すと前の画像と色が変わることがある
+
 ## テスト
 
 ```bash
