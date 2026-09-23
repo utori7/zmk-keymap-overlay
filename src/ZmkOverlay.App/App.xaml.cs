@@ -375,10 +375,11 @@ public partial class App : Application, ISettingsHost
     /// <paramref name="recover"/> のときは、起動できなくなる状態をここで直す。
     /// 読めないファイルは退避して作り直し（<c>Notice</c> に理由）、古い場所を指すサンプルのパスは向け直す。
     /// --config で明示されたファイルは開発用なので、退避しない。
+    /// まだ無いパスを --config で指したときは、そこに作る（初回起動の動きを試すための指定なので）。
     /// </summary>
     private (AppConfig Config, string Path, bool Created, string? Notice) LoadConfig(bool recover)
     {
-        var path = _configOverride ?? ConfigPaths.FindConfig();
+        var path = ConfigPaths.FindConfig(_configOverride);
         string? notice = null;
 
         if (path is not null)
@@ -400,7 +401,7 @@ public partial class App : Application, ISettingsHost
         }
 
         // 初回起動（または作り直し）。既定値を書き出して、以後は利用者が編集できるようにする。
-        path ??= ConfigPaths.DefaultWriteTarget();
+        path ??= ConfigPaths.WriteTarget(_configOverride);
 
         var (layout, keymap) = ConfigPaths.SampleFiles(path);
         var created = new AppConfig

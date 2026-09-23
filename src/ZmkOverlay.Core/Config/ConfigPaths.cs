@@ -35,6 +35,16 @@ public static class ConfigPaths
     }
 
     /// <summary>
+    /// 読み込むべき設定ファイル。<paramref name="overridePath"/>（--config の指定）があれば探索はせず、
+    /// そのファイルだけを見る。まだ無ければ null。初回起動と同じ扱いになり、
+    /// <see cref="WriteTarget"/> がそのパスに作る。
+    /// </summary>
+    public static string? FindConfig(string? overridePath) =>
+        overridePath is null ? FindConfig()
+        : File.Exists(overridePath) ? overridePath
+        : null;
+
+    /// <summary>
     /// 設定が無いときの新規作成先。exe フォルダが書ければそちら。
     ///
     /// 書けるかどうかは使い捨てのファイルで確かめる。config.json そのものを開いて確かめると、
@@ -55,6 +65,12 @@ public static class ConfigPaths
             return Path.Combine(RoamingDirectory, ConfigFileName);
         }
     }
+
+    /// <summary>
+    /// 設定を新しく作る場所。--config で指定されていれば、既定の場所ではなくそのパスに作る。
+    /// まだ無いパスを渡して、初回起動の動きを試せるようにするため。
+    /// </summary>
+    public static string WriteTarget(string? overridePath) => overridePath ?? DefaultWriteTarget();
 
     /// <summary>同梱サンプルの、exe のフォルダからの場所。</summary>
     public const string SampleLayoutFile = "data/layouts/corne.json";
