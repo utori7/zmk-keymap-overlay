@@ -30,7 +30,7 @@ English: [configuration.md](configuration.md)
 | キー | 既定値 | 意味 |
 |---|---|---|
 | `language` | `auto` | 表示言語。`ja` / `en`。`auto` は Windows の表示言語に従う |
-| `displayMode` | `layersOnly` | 有効のときの見せ方。`layersOnly` = L1 以上にいるあいだだけ表示 / `selectedLayers` = `hiddenLayers` に無いレイヤーにいるあいだだけ表示 / `always` = 常に表示。知らない値は `layersOnly` として扱う |
+| `displayMode` | `always` | 有効のときの見せ方。`always` = 常に表示 / `layersOnly` = L1 以上にいるあいだだけ表示 / `selectedLayers` = `hiddenLayers` に無いレイヤーにいるあいだだけ表示。知らない値は既定の `always` として扱う |
 | `hiddenLayers` | `[0]` | `selectedLayers` のときに表示しないレイヤーの番号。例 `[0, 1]`。`0` を外すと、何も押していないときも L0 を表示する。書かれていないレイヤー（あとから足したものを含む）は表示する |
 | `keyUnitPx` | `44` | キー 1u のピクセル数。全体の大きさはこれで決まる |
 | `opacity` | `0.88` | オーバーレイの不透明度 |
@@ -40,7 +40,7 @@ English: [configuration.md](configuration.md)
 | `clickThrough` | `true` | クリックを下のアプリへ素通しするか。`false` にすると、オーバーレイがクリックとドラッグを受け取る（上端のタブでレイヤーを選ぶ・板をドラッグで動かす）。どちらでも、入力中のアプリからフォーカスは奪わない |
 | `keyboardLayout` | （下記） | PC のキーボード配列（`jis` / `us`）。同じキーでも出る記号が変わる。初回起動時に PC のキーボードに合わせて書き込む（日本語キーボードなら `jis`、それ以外は `us`）。項目が無いときは `jis` |
 | `toggleHotkey` | `Ctrl+Alt+K` | 有効 / 無効の切り替え。`{"modifiers": ["Ctrl","Alt"], "key": "K"}`。初回起動時、この PC の配列で Ctrl+Alt+K が文字の入力に使われる（AltGr）なら、`Ctrl+Alt+Shift+K`、それも使われるなら `Ctrl+Alt+F12` を書き込む |
-| `clickThroughHotkey` | なし | `clickThrough` を切り替えるショートカット。書き方は `toggleHotkey` と同じ。既定では割り当てない（押さえてよい組み合わせは PC ごとに違うため）。`key` を空にすると割り当てない |
+| `clickThroughHotkey` | `Ctrl+Alt+M` | `clickThrough` を切り替えるショートカット。書き方は `toggleHotkey` と同じ。初回起動時、Ctrl+Alt+M が文字の入力に使われるなら `Ctrl+Alt+Shift+M`、それも使われるなら `Ctrl+Alt+F11` を書き込む。`key` を空にすると割り当てない |
 | `enableManualLayerKeys` | `true` | ショートカットでレイヤーを手で表示する |
 | `layerHotkeys` | なし | レイヤー番号 → ショートカット。例 `{"1": {"modifiers": ["Ctrl","Shift"], "key": "Q"}}`。書かなければ `Ctrl+Alt+<番号>`（0〜9）。ただしその組み合わせがこの PC の配列で文字の入力に使われるなら割り当てない。`key` を空にすると割り当てない |
 | `layerSync.enabled` | `true` | キーボードのレイヤーに追従する |
@@ -108,9 +108,13 @@ English: [configuration.md](configuration.md)
 
 | | 無効のとき | 有効のとき |
 |---|---|---|
-| `layersOnly`（既定） | 出ない | **L1 以上にいるあいだだけ表示**。L0 では出ない |
+| `always`（既定） | 出ない | 常時表示。レイヤーに応じて中身が変わり、離すと L0 に戻る |
+| `layersOnly` | 出ない | **L1 以上にいるあいだだけ表示**。L0 では出ない |
 | `selectedLayers` | 出ない | **`hiddenLayers` に無いレイヤーにいるあいだだけ表示**。L0 も選べる |
-| `always` | 出ない | 常時表示。レイヤーに応じて中身が変わり、離すと L0 に戻る |
+
+既定が `always` なのは、キーボードから合図を送る機能が試験的で、合図を送らない使い方
+（キーマップを手元の一覧として置いておく）でも、入れた直後から見えているようにするため。
+`layersOnly` と `selectedLayers` は、合図を送るか、ショートカットで手で出すかが前提になる。
 
 `layersOnly` で L0（ベースレイヤー）が出ないのは、何も押していない状態そのものだから。
 

@@ -85,6 +85,7 @@ dotnet run --project src/ZmkOverlay.App -- --render-setup out      # 初期設�
     "signalKeys": { "1": "F13", "2": "F14", "3": "F15", "4": "F16", "5": "F17" }
   },
   "toggleHotkey": { "modifiers": ["Ctrl", "Alt"], "key": "K" },
+  "clickThroughHotkey": { "modifiers": ["Ctrl", "Alt"], "key": "M" },
   "layerSync": { "enabled": true, "mode": "hold" }
 }
 ```
@@ -93,7 +94,12 @@ dotnet run --project src/ZmkOverlay.App -- --render-setup out      # 初期設�
   「いまの状態」も「追従できるレイヤーがありません」になる
 - **`keyboardLayout` は英語版も `jis`。** demo40 は JIS 専用のキー（`INT3` / `INT4` / `INT5`）を使うので、
   `us` にすると ¥ や 変換 ではなく生のキーコード名が出る
-- 切り抜きは幅そのまま、高さは中身の最後の行 + 20px（下の余白を揃えるため）
+- **ショートカットの欄も書く。** 「表示」には有効 / 無効とオーバーレイの操作の 2 つが出る。
+  書かないと初回起動時に選び直した組み合わせが写り、撮るたびに絵が変わる
+- **切り抜きは要らないことが多い。** 書き出しはページの中身が全部入る高さになる
+  （`OffscreenRenderer.RenderWholePage`。ウィンドウをいくら高くしても Windows が作業領域の高さで抑えるので、
+  中身を測り直している）。ウィンドウより短いページだけ、下に余白が残るので切る。
+  切るときは幅そのまま、高さは中身の最後の行 + 20px
 - 選択色は Windows のアクセントカラーがそのまま出る。撮り直すと前の画像と色が変わることがある
 
 ## テスト

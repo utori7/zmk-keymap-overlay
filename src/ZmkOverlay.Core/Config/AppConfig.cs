@@ -63,8 +63,24 @@ public static class HotkeyRules
         new HotkeySpec { Modifiers = { "Ctrl", "Alt" }, Key = "F12" },
     };
 
-    public static HotkeySpec ChooseDefaultToggle() =>
-        Copy(ToggleCandidates.FirstOrDefault(s => !TypesCharacter(s)) ?? ToggleCandidates[0]);
+    /// <summary>
+    /// オーバーレイの操作（クリックの受け取り）を切り替える既定の候補。M は「マウス」から。
+    /// <see cref="ToggleCandidates"/> とも、レイヤーの既定（Ctrl+Alt+0〜9）とも、
+    /// 合図キー（F13〜F24）とも重ならない組み合わせにしてある。
+    /// </summary>
+    public static IReadOnlyList<HotkeySpec> ClickThroughCandidates { get; } = new[]
+    {
+        new HotkeySpec { Modifiers = { "Ctrl", "Alt" }, Key = "M" },
+        new HotkeySpec { Modifiers = { "Ctrl", "Alt", "Shift" }, Key = "M" },
+        new HotkeySpec { Modifiers = { "Ctrl", "Alt" }, Key = "F11" },
+    };
+
+    public static HotkeySpec ChooseDefaultToggle() => ChooseDefault(ToggleCandidates);
+
+    public static HotkeySpec ChooseDefaultClickThrough() => ChooseDefault(ClickThroughCandidates);
+
+    private static HotkeySpec ChooseDefault(IReadOnlyList<HotkeySpec> candidates) =>
+        Copy(candidates.FirstOrDefault(s => !TypesCharacter(s)) ?? candidates[0]);
 
     private static HotkeySpec Copy(HotkeySpec spec) => new() { Modifiers = spec.Modifiers.ToList(), Key = spec.Key };
 }
@@ -183,17 +199,20 @@ public sealed class ZmkSourceConfig
     }
 }
 
-/// <summary><see cref="AppConfig.DisplayMode"/> に書く値。</summary>
+/// <summary>
+/// <see cref="AppConfig.DisplayMode"/> に書く値。
+/// 並びは画面と揃えてある（前提の少ない順。書き換えの要らない "always" が先頭）。
+/// </summary>
 public static class DisplayModes
 {
+    /// <summary>常に表示し、レイヤーに応じて中身が切り替わる。既定。</summary>
+    public const string Always = "always";
+
     /// <summary>L1 以上のレイヤーにいるあいだだけ表示する。L0 では出ない。</summary>
     public const string LayersOnly = "layersOnly";
 
     /// <summary><see cref="AppConfig.HiddenLayers"/> に無いレイヤーにいるあいだだけ表示する。L0 も選べる。</summary>
     public const string SelectedLayers = "selectedLayers";
-
-    /// <summary>常に表示し、レイヤーに応じて中身が切り替わる。</summary>
-    public const string Always = "always";
 }
 
 public sealed class AppConfig
@@ -218,28 +237,37 @@ public sealed class AppConfig
     /// ホットキーで有効にしているあいだ、どう見せるか。
     /// 無効のあいだは、どの値でも一切表示しない。
     ///
+    /// "always"（既定） 常に表示し、レイヤーに応じて中身が切り替わる。
     /// "layersOnly"     L1 以上のレイヤーにいるあいだだけ表示する。L0 では出ない。
     /// "selectedLayers" <see cref="HiddenLayers"/> に無いレイヤーにいるあいだだけ表示する。
-    /// "always"         常に表示し、レイヤーに応じて中身が切り替わる。
     ///
-    /// 知らない値は "layersOnly" として扱う。
+    /// 知らない値は既定（"always"）として扱う。"layersOnly" に落としていたときは、
+    /// 綴りを間違えた設定ファイルでオーバーレイが一度も出ず、画面から理由が分からなかった。
+    ///
+    /// 既定が "always" なのは、キーボードの書き換え（合図キー）が試験的で、
+    /// 合図を送らない人——キーマップをチートシートとして置いておきたい人——が
+    /// 何も起きない状態から始まらないようにするため。
     /// </summary>
-    public string DisplayMode { get; set; } = DisplayModes.LayersOnly;
-
-    [JsonIgnore]
-    public bool IsAlwaysVisible =>
-        string.Equals(DisplayMode, DisplayModes.Always, StringComparison.OrdinalIgnoreCase);
+    public string DisplayMode { get; set; } = DisplayModes.Always;
 
     [JsonIgnore]
     public bool IsSelectedLayers =>
         string.Equals(DisplayMode, DisplayModes.SelectedLayers, StringComparison.OrdinalIgnoreCase);
 
+    [JsonIgnore]
+    public bool IsLayersOnly =>
+        string.Equals(DisplayMode, DisplayModes.LayersOnly, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>知らない値も既定に寄せるので、この 2 つに当てはまらなければ常時表示。</summary>
+    [JsonIgnore]
+    public bool IsAlwaysVisible => !IsSelectedLayers && !IsLayersOnly;
+
     /// <summary><see cref="DisplayMode"/> を <see cref="DisplayModes"/> のどれかに揃えたもの。</summary>
     [JsonIgnore]
     public string EffectiveDisplayMode =>
-        IsAlwaysVisible ? DisplayModes.Always
-        : IsSelectedLayers ? DisplayModes.SelectedLayers
-        : DisplayModes.LayersOnly;
+        IsSelectedLayers ? DisplayModes.SelectedLayers
+        : IsLayersOnly ? DisplayModes.LayersOnly
+        : DisplayModes.Always;
 
     /// <summary>
     /// "selectedLayers" のときに表示しないレイヤーの番号。よく使って覚えたレイヤーを入れておくと、
@@ -309,12 +337,15 @@ public sealed class AppConfig
         new() { Modifiers = { "Ctrl", "Alt" }, Key = "K" };
 
     /// <summary>
-    /// <see cref="ClickThrough"/> を切り替えるショートカット。key が空なら割り当てない（既定）。
+    /// <see cref="ClickThrough"/> を切り替えるショートカット。key を空にすると割り当てない。
     ///
-    /// 既定を決めないのは、押さえた組み合わせがその人の環境で使えるとは限らないため。
-    /// 数字キーの無いキーボードもあるので、数字前提の既定も作らない。
+    /// 既定を持たせているのは、これが無いとオーバーレイを触れるようにする手段が
+    /// 設定画面の中だけになるため。初回起動時は <see cref="HotkeyRules.ChooseDefaultClickThrough"/>
+    /// で、この PC の配列で文字を打たない組み合わせを選び直す（<see cref="ToggleHotkey"/> と同じ）。
+    /// 数字キーの無いキーボードでも押せるように、数字前提の既定にはしない。
     /// </summary>
-    public HotkeySpec ClickThroughHotkey { get; set; } = new();
+    public HotkeySpec ClickThroughHotkey { get; set; } =
+        new() { Modifiers = { "Ctrl", "Alt" }, Key = "M" };
 
     /// <summary>クリックの受け取りを切り替えるショートカット。割り当てが無いなら null。</summary>
     [JsonIgnore]

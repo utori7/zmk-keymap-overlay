@@ -6,8 +6,8 @@
   "position": "BottomCenter",
   "keyboardLayout": "jis",
 
-  "_displayMode": "Ctrl+Alt+K で有効にしているあいだの見せ方。layersOnly = L1 以上にいるあいだだけ表示 / selectedLayers = hiddenLayers に無いレイヤーにいるあいだだけ表示 / always = 常時表示。無効のあいだはどれでも表示されない。トレイメニューからも切り替えられる。",
-  "displayMode": "layersOnly",
+  "_displayMode": "Ctrl+Alt+K で有効にしているあいだの見せ方。always = 常時表示（既定）/ layersOnly = L1 以上にいるあいだだけ表示 / selectedLayers = hiddenLayers に無いレイヤーにいるあいだだけ表示。知らない値は既定として扱う。無効のあいだはどれでも表示されない。トレイメニューからも切り替えられる。",
+  "displayMode": "always",
 
   "_hiddenLayers": "selectedLayers のときに表示しないレイヤーの番号。よく使って覚えたレイヤーを入れておく。0 を外すと、何も押していないときも L0 を表示する。",
   "hiddenLayers": [0],
@@ -39,7 +39,11 @@
     }
   },
 
+  "_toggleHotkey": "オーバーレイの有効 / 無効。初回起動時に、この PC の配列で文字の入力に使われない組み合わせが選ばれる（Ctrl+Alt+K → Ctrl+Alt+Shift+K → Ctrl+Alt+F12）。",
   "toggleHotkey": { "modifiers": ["Ctrl", "Alt"], "key": "K" },
+
+  "_clickThroughHotkey": "clickThrough の切り替え。既定は Ctrl+Alt+M（同じく Ctrl+Alt+Shift+M → Ctrl+Alt+F11 の順で選び直す）。key を空にすると割り当てない。",
+  "clickThroughHotkey": { "modifiers": ["Ctrl", "Alt"], "key": "M" },
 
   "layerSync": {
     "enabled": true,

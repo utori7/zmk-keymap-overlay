@@ -136,6 +136,7 @@ function AssertHotkeys([string]$where) {
     if (-not [Ov]::HeldBySomeoneElse($script:NoRepeat, 0x7C)) { $missing += 'F13' }
     if (-not [Ov]::HeldBySomeoneElse($script:Ctrl,     0x7C)) { $missing += 'Ctrl+F13' }
     if (-not [Ov]::HeldBySomeoneElse($script:CtrlAlt,  0x4B)) { $missing += 'Ctrl+Alt+K' }
+    if (-not [Ov]::HeldBySomeoneElse($script:CtrlAlt,  0x4D)) { $missing += 'Ctrl+Alt+M' }
     if (-not [Ov]::HeldBySomeoneElse($script:CtrlAlt,  0x31)) { $missing += 'Ctrl+Alt+1' }
 
     if ($missing.Count -eq 0) { return }

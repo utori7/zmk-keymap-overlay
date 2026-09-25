@@ -100,19 +100,20 @@ public sealed class TrayIcon : IDisposable
 
         // 並べて、選ばれていない側が何なのかも見えるようにする。
         // チェックボックス 1 個だと、外したときの挙動がどこにも書かれない。
-        // 出る場面が少ない順に並べる。どのレイヤーで出すかは設定画面で選ぶ。
+        // 前提の少ない順に並べる（既定の「常に表示」はキーボードの書き換えが要らない）。
+        // 設定画面の「表示するとき」と同じ並び。どのレイヤーで出すかは設定画面で選ぶ。
+        _always = new ToolStripMenuItem();
         _layersOnly = new ToolStripMenuItem();
         _selected = new ToolStripMenuItem();
-        _always = new ToolStripMenuItem();
 
+        _always.Click += (_, _) => ChooseMode(DisplayModes.Always);
         _layersOnly.Click += (_, _) => ChooseMode(DisplayModes.LayersOnly);
         _selected.Click += (_, _) => ChooseMode(DisplayModes.SelectedLayers);
-        _always.Click += (_, _) => ChooseMode(DisplayModes.Always);
 
         _mode = new ToolStripMenuItem();
+        _mode.DropDownItems.Add(_always);
         _mode.DropDownItems.Add(_layersOnly);
         _mode.DropDownItems.Add(_selected);
-        _mode.DropDownItems.Add(_always);
 
         SyncDisplayMode(displayMode);
 

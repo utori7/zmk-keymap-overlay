@@ -1,4 +1,4 @@
-using ZmkOverlay.Core.Text;
+﻿using ZmkOverlay.Core.Text;
 
 namespace ZmkOverlay.App.Text;
 
@@ -43,6 +43,9 @@ internal static class UiText
     /// <summary>
     /// Windows のトーストは日本語の本文を 4 行ほどで切るので、収まる長さにしてある
     /// （切れると最後の一文が読めない）。足すときは実機で確かめること。
+    ///
+    /// 「完了」まで見ていない人向けなので、<see cref="DoneLead"/> と違って組み合わせを文中に書く
+    /// （完了の画面では欄に出るが、この人はそれを見ていない）。
     /// </summary>
     public static string StillRunningBody(string toggleHotkey) =>
         T($"トレイのアイコン（画面右下、または「^」の中）から、初期設定を続けられます。{toggleHotkey} で表示の切り替え。",
@@ -139,8 +142,8 @@ internal static class UiText
         T($"L{layerId}: キー '{key}' を解釈できません", $"L{layerId}: unrecognized key '{key}'");
 
     public static string HotkeyTypesCharacter(string spec) =>
-        T($"{spec} はこの PC のキーボード配列で文字の入力に使われるので、登録しませんでした。設定画面の「ショートカット」で別の組み合わせを選んでください。",
-          $"{spec} types a character with this PC's keyboard layout, so it was not registered. Choose another combination in Settings → Shortcuts.");
+        T($"{spec} はこの PC のキーボード配列で文字の入力に使われるので、登録しませんでした。設定画面の「表示」または「レイヤー」で別の組み合わせを選んでください。",
+          $"{spec} types a character with this PC's keyboard layout, so it was not registered. Choose another combination in Settings → Display or Layers.");
 
     // ---- 自動起動 ----
 
@@ -174,7 +177,6 @@ internal static class UiText
     public static string PageKeyboard => T("キーボード", "Keyboard");
     public static string PageDisplay => T("表示", "Display");
     public static string PageLayers => T("レイヤー", "Layers");
-    public static string PageShortcuts => T("ショートカット", "Shortcuts");
     public static string PageGeneral => T("全般", "General");
 
     // キーボード
@@ -325,9 +327,9 @@ internal static class UiText
 
     public static string StatusWhyNoTrigger =>
         T("キーボードのレイヤーに追従せず、レイヤーを表示するショートカットもありません。" +
-          "「レイヤー」で追従を入れるか、「ショートカット」で組み合わせを割り当ててください。",
+          "「レイヤー」で追従を入れるか、同じページのレイヤーの表でショートカットを割り当ててください。",
           "The overlay does not follow the keyboard\u2019s layers, and no shortcut shows a layer. " +
-          "Turn on following in \"Layers\", or assign a combination in \"Shortcuts\".");
+          "Turn on following in \"Layers\", or assign a shortcut in the layer table there.");
 
     public static string SectionShowWhen => T("表示するとき", "When to show");
     public static string SectionLook => T("見た目", "Appearance");
@@ -395,6 +397,7 @@ internal static class UiText
     public static string ColumnName => T("名前", "Name");
     public static string ColumnSignal => T("合図キー", "Signal key");
     public static string ColumnTest => T("テスト", "Test");
+    public static string ColumnShortcut => T("ショートカット", "Shortcut");
     public static string NoSignal => T("なし", "None");
 
     public static string OpenFirmwareSetup => T("キーボードを書き換える（試験的）…", "Update your keyboard (experimental)…");
@@ -422,8 +425,8 @@ internal static class UiText
     public static string ClickThroughHotkeyLabel => T("オーバーレイの操作", "Using the overlay");
 
     public static string ClickThroughHotkeyNote =>
-        T("クリックとドラッグを受け取るかどうかを切り替えます。既定では割り当てていません。",
-          "Switches whether the overlay takes clicks and drags. Nothing is assigned by default.");
+        T("クリックとドラッグを受け取るかどうかを切り替えます。既定は Ctrl+Alt+M で、Delete を押すと割り当てを外せます。",
+          "Switches whether the overlay takes clicks and drags. The default is Ctrl+Alt+M; press Delete to remove it.");
 
     public static string HotkeyHint =>
         T("欄をクリックしてから、使いたい組み合わせを押してください。Esc で取り消し、" +
@@ -439,7 +442,6 @@ internal static class UiText
         T("キーボードを書き換えていなくても、手でレイヤーを出せます。数字キーの無いキーボードでは、押しやすい組み合わせに変えてください。",
           "Lets you show layers by hand, even before changing your keyboard. If your keyboard has no number keys, pick combinations you can press.");
 
-    public static string SectionLayerShortcuts => T("レイヤーを手で表示する", "Show a layer by hand");
     public static string NoShortcut => T("なし", "None");
     public static string ResetToDefault => T("既定に戻す", "Reset");
 
@@ -488,17 +490,19 @@ internal static class UiText
           "While you hold a layer key, that layer's keys appear.");
 
     public static string WelcomeSteps =>
-        T("これから次の順に準備します（5 分ほど。キーボードを書き換える場合は、ビルドを待つ時間が加わります）。\n" +
+        T("これから次の順に準備します（2 分ほど。キーボードを書き換える場合は、ビルドを待つ時間が加わります）。\n" +
           "  ・キーマップの場所を教える\n" +
           "  ・キーボードの形を確かめる\n" +
-          "  ・キーボードがレイヤーの合図を送るようにする\n" +
-          "  ・動作を確かめる\n" +
+          "  ・キーボードがレイヤーの合図を送るようにする（任意）\n" +
+          "  ・動作を確かめる（任意）\n" +
+          "キーマップを手元の一覧として見るだけなら、キーボードはそのままで使えます。下の 2 つは「次へ」で飛ばせます。\n" +
           "途中で閉じても、そこまでの設定は残ります。トレイのアイコンから、いつでも続けられます。",
-          "We'll get ready in this order (about 5 minutes, plus build time if you update your keyboard):\n" +
+          "We'll get ready in this order (about 2 minutes, plus build time if you update your keyboard):\n" +
           "  · Tell the app where your keymap is\n" +
           "  · Check the shape of your keyboard\n" +
-          "  · Make your keyboard send layer signals\n" +
-          "  · Try it out\n" +
+          "  · Make your keyboard send layer signals (optional)\n" +
+          "  · Try it out (optional)\n" +
+          "If you only want your keymap on screen as a cheat sheet, your keyboard can stay as it is — press Next to skip the last two.\n" +
           "If you close this window early, what you set so far is kept. You can continue any time from the tray icon.");
 
     public static string SourceTitle => T("キーマップはどこにありますか？", "Where is your keymap?");
@@ -546,6 +550,16 @@ internal static class UiText
           "on a PC running this app, other apps never see them.");
 
     public static string ExperimentalBadge => T("試験的", "Experimental");
+
+    /// <summary>
+    /// 合図を送らない使い方（キーマップを一覧として見るだけ）なら、このステップは要らない。
+    /// 「次へ」は塞がない方針なので、飛ばしてよいことを言葉で書く。
+    /// </summary>
+    public static string FirmwareOptional =>
+        T("このステップは任意です。キーマップを一覧として見るだけなら、キーボードはそのままでよく、" +
+          "「次へ」で進めます。あとからトレイの「初期設定をやり直す…」で戻ってこられます。",
+          "This step is optional. If you just want your keymap on screen as a cheat sheet, leave your keyboard as it is " +
+          "and press Next. You can come back later from \"Run setup again…\" in the tray.");
 
     public static string FirmwareExperimental =>
         T("試験的な機能です。書き換えたキーマップがビルドできることと、作者のキーボードで動くことは確かめましたが、" +
@@ -744,11 +758,25 @@ internal static class UiText
     public static string DoneSelectedNote =>
         T("表示するレイヤーは、設定の「表示」で選べます。", "Choose the layers in Settings → Display.");
 
-    public static string DoneLead(string toggleHotkey) =>
-        T($"オーバーレイは、画面右下のトレイにあるアイコンから操作できます（見当たらなければ、タスクバーの「^」の中にあります）。" +
-          $"{toggleHotkey} で有効・無効を切り替えられます。" +
+    /// <summary>
+    /// 有効 / 無効の組み合わせはこの下の欄に出るので、本文には書かない（二重になる）。
+    /// </summary>
+    public static string DoneLead =>
+        T("オーバーレイは、画面右下のトレイにあるアイコンから操作できます（見当たらなければ、タスクバーの「^」の中にあります）。" +
           "設定はトレイの「設定…」からいつでも変えられます。exe をもう一度開いても、設定画面が開きます。",
-          $"Use the icon in the system tray (bottom right) to control the overlay. If you can't see it, it is under \"^\" on the taskbar. " +
-          $"{toggleHotkey} turns it on and off. " +
+          "Use the icon in the system tray (bottom right) to control the overlay. If you can't see it, it is under \"^\" on the taskbar. " +
           "You can change settings any time from \"Settings…\" in the tray, or by opening the app again.");
+
+    /// <summary>完了の画面の、出し方・消し方・動かし方の枠の見出し。</summary>
+    public static string DoneKeysTitle => T("オーバーレイの出し方と操作", "Showing and using the overlay");
+
+    /// <summary>
+    /// 合図を送らない使い方の人は、レイヤーを見る手段がこれとトレイだけになるので、ここで伝える。
+    /// 割り当てを変えられる場所も添える（数字キーの無いキーボードがある）。
+    /// </summary>
+    public static string DoneLayerKeysNote =>
+        T("レイヤーを 1 つずつ見るなら、Ctrl+Alt+0〜9 とトレイのメニューが使えます。" +
+          "押しにくい組み合わせなら、設定の「レイヤー」で変えられます。",
+          "To look at one layer at a time, use Ctrl+Alt+0–9 or the tray menu. " +
+          "If those combinations are awkward on your keyboard, change them in Settings → Layers.");
 }

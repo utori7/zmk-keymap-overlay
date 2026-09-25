@@ -27,20 +27,56 @@ internal static class OffscreenRenderer
     }
 
     /// <summary>
-    /// 表示中のウィンドウを、いまの大きさのまま写す。測り直すと、幅いっぱいに広がる
-    /// スライダーなどが最小幅に縮んでしまい、実際の見た目と違う絵になるため。
+    /// 表示中のウィンドウの中身を、スクロールせずに全体が入る高さで写す。
+    ///
+    /// 高さをウィンドウに任せられない。ウィンドウをいくら高くしても Windows が作業領域の高さで抑えるので
+    /// （WM_GETMINMAXINFO の <c>ptMaxTrackSize</c>）、縦に長いページは下が切れる。
+    /// そこで中身だけを測り直し、必要な高さに並べ直してから写す。
+    ///
+    /// **幅は今のまま**にすること。幅も測り直すと、幅いっぱいに広がるスライダーなどが
+    /// 最小幅に縮んでしまい、実際の見た目と違う絵になる。
     /// </summary>
-    public static void RenderAsShown(Window window, string path)
+    public static void RenderWholePage(Window window, string path)
     {
-        var width = (int)Math.Ceiling(window.ActualWidth);
-        var height = (int)Math.Ceiling(window.ActualHeight);
+        if (window.Content is not FrameworkElement root)
+        {
+            RenderAsShown(window, path);
+            return;
+        }
+
+        var width = window.ActualWidth;
+
+        // UpdateLayout はここで呼ばない。呼ぶとウィンドウから並べ直され、
+        // せっかく広げた高さが作業領域の分に戻ってしまう。
+        root.InvalidateMeasure();
+        root.Measure(new Size(width, double.PositiveInfinity));
+        var height = Math.Max(window.ActualHeight, root.DesiredSize.Height);
+        root.Arrange(new Rect(0, 0, width, height));
+
+        Compose(root, width, height, path);
+
+        // 次のページのために、ウィンドウの本当の大きさへ戻す。
+        root.InvalidateMeasure();
+        window.UpdateLayout();
+    }
+
+    /// <summary>表示中のウィンドウを、いまの大きさのまま写す。</summary>
+    public static void RenderAsShown(Window window, string path) =>
+        Compose(window, window.ActualWidth, window.ActualHeight, path);
+
+    /// <summary>
+    /// Windows 11 風テーマのウィンドウは、背景を Windows（Mica）に描かせる。ウィンドウ自身の絵では
+    /// 背景が透明になり、ダークテーマの明るい文字が透明の上に乗って読めない。テーマに合った地を敷いてから重ねる。
+    /// </summary>
+    private static void Compose(Visual visual, double actualWidth, double actualHeight, string path)
+    {
+        var width = (int)Math.Ceiling(actualWidth);
+        var height = (int)Math.Ceiling(actualHeight);
         var bounds = new Rect(0, 0, width, height);
 
         var shot = new RenderTargetBitmap(width, height, Dpi, Dpi, PixelFormats.Pbgra32);
-        shot.Render(window);
+        shot.Render(visual);
 
-        // Windows 11 風テーマのウィンドウは、背景を Windows（Mica）に描かせる。ウィンドウ自身の絵では
-        // 背景が透明になり、ダークテーマの明るい文字が透明の上に乗って読めない。テーマに合った地を敷いてから重ねる。
         var composed = new DrawingVisual();
         using (var context = composed.RenderOpen())
         {

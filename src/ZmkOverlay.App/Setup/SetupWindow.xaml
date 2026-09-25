@@ -181,7 +181,10 @@
                     </WrapPanel>
                     <TextBlock x:Name="FirmwareLead" Style="{StaticResource Lead}" />
                     <TextBlock x:Name="FirmwareExperimental" Style="{StaticResource Note}" Opacity="1"
-                               Margin="0,-6,0,14" Visibility="Collapsed" />
+                               Margin="0,-6,0,4" Visibility="Collapsed" />
+                    <!-- 合図を送らない使い方の人が、ここで行き止まりだと思わないように。 -->
+                    <TextBlock x:Name="FirmwareOptional" Style="{StaticResource Note}" Opacity="1"
+                               FontWeight="SemiBold" Margin="0,0,0,14" />
 
                     <Border Style="{StaticResource Card}">
                         <StackPanel x:Name="FirmwareTable" />
@@ -263,13 +266,34 @@
                                FontWeight="SemiBold" Margin="0,0,0,10" Visibility="Collapsed" />
 
                     <TextBlock x:Name="DoneModeTitle" Style="{StaticResource CardTitle}" Margin="0,8,0,6" />
+                    <!-- 設定画面の「表示するとき」と同じ、前提の少ない順。既定の「常に表示」が先頭。 -->
+                    <RadioButton x:Name="DoneAlways" GroupName="SetupMode" Checked="OnModeChecked" />
+                    <TextBlock x:Name="DoneAlwaysNote" Style="{StaticResource Note}" Margin="28,0,0,6" />
                     <RadioButton x:Name="DoneLayersOnly" GroupName="SetupMode" Checked="OnModeChecked" />
                     <TextBlock x:Name="DoneLayersOnlyNote" Style="{StaticResource Note}" Margin="28,0,0,6" />
                     <!-- どのレイヤーで出すかのチェックは設定画面にだけ置く。ここでは選べることを知らせる。 -->
                     <RadioButton x:Name="DoneSelected" GroupName="SetupMode" Checked="OnModeChecked" />
                     <TextBlock x:Name="DoneSelectedNote" Style="{StaticResource Note}" Margin="28,0,0,6" />
-                    <RadioButton x:Name="DoneAlways" GroupName="SetupMode" Checked="OnModeChecked" />
-                    <TextBlock x:Name="DoneAlwaysNote" Style="{StaticResource Note}" Margin="28,0,0,6" />
+
+                    <!--
+                      出し方・消し方・動かし方を、ここで確かめて変えられるようにする。
+                      合図を送らない使い方の人は、この 2 つとレイヤーのショートカットだけで足りる。
+                    -->
+                    <TextBlock x:Name="DoneKeysTitle" Style="{StaticResource CardTitle}" Margin="0,16,0,6" />
+                    <TextBlock x:Name="DoneKeysNote" Style="{StaticResource Note}" Margin="0,0,0,8" />
+                    <DockPanel Margin="0,0,0,4">
+                        <TextBlock x:Name="DoneToggleLabel" Width="200" VerticalAlignment="Center" TextWrapping="Wrap" />
+                        <TextBox x:Name="DoneHotkeyBox" Width="220" HorizontalAlignment="Left" IsReadOnly="True"
+                                 IsReadOnlyCaretVisible="False" />
+                    </DockPanel>
+                    <CheckBox x:Name="DoneClickable" Margin="0,8,0,0" Click="OnClickableClick" />
+                    <TextBlock x:Name="DoneClickableNote" Style="{StaticResource Note}" Margin="28,0,0,6" />
+                    <DockPanel Margin="28,0,0,4">
+                        <TextBlock x:Name="DoneClickThroughLabel" Width="200" VerticalAlignment="Center" TextWrapping="Wrap" />
+                        <TextBox x:Name="DoneClickThroughHotkeyBox" Width="220" HorizontalAlignment="Left" IsReadOnly="True"
+                                 IsReadOnlyCaretVisible="False" />
+                    </DockPanel>
+                    <TextBlock x:Name="DoneLayerKeysNote" Style="{StaticResource Note}" Margin="0,8,0,0" />
 
                     <CheckBox x:Name="DoneRunAtLogin" Margin="0,16,0,0" Click="OnRunAtLoginClick" />
                     <TextBlock x:Name="DoneRunAtLoginNote" Style="{StaticResource Note}" Margin="28,0,0,0" />
