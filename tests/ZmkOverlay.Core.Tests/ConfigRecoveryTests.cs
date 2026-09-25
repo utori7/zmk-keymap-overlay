@@ -109,6 +109,30 @@ public class ConfigRecoveryTests : IDisposable
     }
 
     [Fact]
+    public void ConfigGivenOnTheCommandLineIsCreatedWhenItIsNotThereYet()
+    {
+        // --config は既定の探索場所を汚さずに試すための指定。まだ無いパスを渡したら、
+        // 起動に失敗せず、初回起動としてそこに作る。
+        var missing = Path.Combine(_directory, "dev", "config.json");
+
+        Assert.Null(ConfigPaths.FindConfig(missing));
+        Assert.Equal(missing, ConfigPaths.WriteTarget(missing));
+
+        Directory.CreateDirectory(Path.GetDirectoryName(missing)!);
+        File.WriteAllText(missing, "{}");
+
+        // 一度できたら、次からはそれを読む。既定の場所は見ない。
+        Assert.Equal(missing, ConfigPaths.FindConfig(missing));
+    }
+
+    [Fact]
+    public void WithoutTheCommandLineTheUsualPlacesAreUsed()
+    {
+        Assert.Equal(ConfigPaths.FindConfig(), ConfigPaths.FindConfig(null));
+        Assert.Equal(ConfigPaths.DefaultWriteTarget(), ConfigPaths.WriteTarget(null));
+    }
+
+    [Fact]
     public void BundledSampleDataIsReadable()
     {
         // data/ は tools/KeymapDump --json で作る。手で壊していないこと。
