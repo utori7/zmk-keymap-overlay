@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using ZmkOverlay.App.Render;
@@ -53,6 +54,9 @@ public partial class SetupWindow : Window
     private readonly HashSet<int> _received = new();
     private readonly Dictionary<int, TextBlock> _testMarks = new();
 
+    /// <summary>「完了」のショートカットの欄。設定画面と同じ記録の処理を使う。</summary>
+    private readonly HotkeyCapture _capture;
+
     /// <summary>
     /// 動作確認で、しばらく待っても合図が届かないときに手がかりを出すための間。
     /// 入った直後に出すと、まだ何も押していない人を驚かせるだけなので待つ。
@@ -80,8 +84,16 @@ public partial class SetupWindow : Window
         _host = host;
         _pages = new FrameworkElement[] { WelcomePage, SourcePage, ShapePage, FirmwarePage, TestPage, DonePage };
 
+        // 記録が終わったら「次へ」にフォーカスを返す。この画面には一覧のような逃げ場が無い。
+        _capture = new HotkeyCapture(_host, change => Apply(change), () => NextButton.Focus());
+        _capture.Attach(DoneHotkeyBox, HotkeyTarget.Toggle);
+        _capture.Attach(DoneClickThroughHotkeyBox, HotkeyTarget.ClickThrough);
+
         _host.Applied += OnApplied;
         _host.SignalReceived += OnSignalReceived;
+
+        // 別のアプリに切り替えたときに、登録済みのホットキーを外したままにしない。
+        Deactivated += (_, _) => _capture.End();
 
         _noSignal = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
         _noSignal.Tick += (_, _) =>
@@ -96,6 +108,7 @@ public partial class SetupWindow : Window
             _host.Applied -= OnApplied;
             _host.SignalReceived -= OnSignalReceived;
             _noSignal.Stop();
+            _capture.End();
             RememberStep();
         };
 
@@ -233,12 +246,16 @@ public partial class SetupWindow : Window
                     break;
 
                 case SetupStep.Done:
-                    DoneLead.Text = UiText.DoneLead(_host.Config.ToggleHotkey.ToString());
                     DoneSampleNote.Visibility = _host.Config.Zmk.IsEnabled ? Visibility.Collapsed : Visibility.Visible;
                     var mode = _host.Config.EffectiveDisplayMode;
+                    DoneAlways.IsChecked = mode == DisplayModes.Always;
                     DoneLayersOnly.IsChecked = mode == DisplayModes.LayersOnly;
                     DoneSelected.IsChecked = mode == DisplayModes.SelectedLayers;
-                    DoneAlways.IsChecked = mode == DisplayModes.Always;
+                    DoneClickable.IsChecked = _host.Config.IsInteractive;
+
+                    // 記録の途中なら、「押してください」や衝突の理由を上書きしない。
+                    _capture.RefreshText(skipFocused: true);
+
                     DoneRunAtLogin.IsChecked = _host.RunAtLogin;
                     break;
             }
@@ -769,6 +786,18 @@ public partial class SetupWindow : Window
         Apply(config => config.DisplayMode = mode);
     }
 
+    /// <summary>
+    /// 設定画面と同じく、ここだけは <see cref="ISettingsHost.TryApply"/> を通さない。
+    /// 全反映はオーバーレイを「何も押していない」状態に戻すので、切り替えの途中で板が消えうる
+    /// （<see cref="ISettingsHost.SetClickThrough"/>）。
+    /// </summary>
+    private void OnClickableClick(object sender, RoutedEventArgs e)
+    {
+        if (!_ready || _loading) return;
+
+        _host.SetClickThrough(DoneClickable.IsChecked != true);
+    }
+
     private void OnRunAtLoginClick(object sender, RoutedEventArgs e)
     {
         if (!_ready) return;
@@ -900,6 +929,7 @@ public partial class SetupWindow : Window
             FirmwareTitle.Text = UiText.FirmwareTitle;
             FirmwareBadge.Text = UiText.ExperimentalBadge;
             FirmwareExperimental.Text = UiText.FirmwareExperimental;
+            FirmwareOptional.Text = UiText.FirmwareOptional;
             FirmwareBackup.Text = UiText.FirmwareBackup;
             FirmwareGitHubSteps.Text = UiText.FirmwareGitHubSteps;
             CopyAndOpen.Content = UiText.CopyAndOpenEditor;
@@ -923,14 +953,27 @@ public partial class SetupWindow : Window
             ReportResult.Content = UiText.ReportResult;
 
             DoneTitle.Text = UiText.DoneTitle;
+            DoneLead.Text = UiText.DoneLead;
             DoneSampleNote.Text = UiText.DoneStillSample;
             DoneModeTitle.Text = UiText.SectionShowWhen;
+            DoneAlways.Content = UiText.ModeAlways;
+            DoneAlwaysNote.Text = UiText.ModeAlwaysTip;
             DoneLayersOnly.Content = UiText.ModeLayersOnly;
             DoneLayersOnlyNote.Text = UiText.ModeLayersOnlyTip;
             DoneSelected.Content = UiText.ModeSelected;
             DoneSelectedNote.Text = UiText.ModeSelectedTip + " " + UiText.DoneSelectedNote;
-            DoneAlways.Content = UiText.ModeAlways;
-            DoneAlwaysNote.Text = UiText.ModeAlwaysTip;
+
+            DoneKeysTitle.Text = UiText.DoneKeysTitle;
+            DoneKeysNote.Text = UiText.HotkeyHint;
+            DoneToggleLabel.Text = UiText.ToggleHotkeyLabel;
+            DoneClickable.Content = UiText.Clickable;
+            DoneClickableNote.Text = UiText.ClickableNote;
+            DoneClickThroughLabel.Text = UiText.ClickThroughHotkeyLabel;
+            DoneLayerKeysNote.Text = UiText.DoneLayerKeysNote;
+
+            AutomationProperties.SetName(DoneHotkeyBox, UiText.ToggleHotkeyLabel);
+            AutomationProperties.SetName(DoneClickThroughHotkeyBox, UiText.ClickThroughHotkeyLabel);
+
             DoneRunAtLogin.Content = UiText.RunAtLogin;
             DoneRunAtLoginNote.Text = UiText.RunAtLoginTip;
         }

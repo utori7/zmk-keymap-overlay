@@ -1,8 +1,8 @@
-<Window x:Class="ZmkOverlay.App.Settings.SettingsWindow"
+﻿<Window x:Class="ZmkOverlay.App.Settings.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         ThemeMode="System"
-        Width="900" Height="640" MinWidth="720" MinHeight="480"
+        Width="1000" Height="640" MinWidth="880" MinHeight="480"
         WindowStartupLocation="CenterScreen"
         FontFamily="Segoe UI, Yu Gothic UI">
 
@@ -31,7 +31,8 @@
 
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="200" />
+            <!-- レイヤーの表が 5 列あるので、ナビは詰めて中身に幅を回す。 -->
+            <ColumnDefinition Width="180" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
@@ -41,7 +42,6 @@
             <ListBoxItem x:Name="NavDisplay" />
             <ListBoxItem x:Name="NavLayers" />
             <ListBoxItem x:Name="NavKeyboard" />
-            <ListBoxItem x:Name="NavShortcuts" />
             <ListBoxItem x:Name="NavGeneral" />
         </ListBox>
 
@@ -68,16 +68,32 @@
                         <TextBlock x:Name="StatusWhy" Style="{StaticResource Note}" Opacity="1"
                                    FontWeight="SemiBold" Margin="0,6,0,0" Visibility="Collapsed" />
 
+                        <!--
+                          状態の話の続きなので、有効 / 無効を変える鍵はここに置く。
+                          以前は「ショートカット」のページにあり、名前からは中身が分からなかった。
+                        -->
+                        <DockPanel Margin="0,10,0,0">
+                            <TextBlock x:Name="ToggleHotkeyLabel" Style="{StaticResource FieldLabel}" />
+                            <TextBox x:Name="HotkeyBox" Width="220" HorizontalAlignment="Left" IsReadOnly="True"
+                                     IsReadOnlyCaretVisible="False" />
+                        </DockPanel>
+                        <TextBlock x:Name="DisplayHotkeyHint" Style="{StaticResource Note}" Margin="180,0,0,0" />
+
                         <TextBlock x:Name="ShowWhenSection" Style="{StaticResource Section}" />
-                        <!-- 出る場面が少ない順に並べる。トレイの「表示の仕方」と同じ並び。 -->
+                        <!--
+                          前提の少ない順に並べる。既定の「常に表示」はキーボードの書き換えが要らず、
+                          「L1 以上」は合図キー、「選んだレイヤー」は合図キーとレイヤーごとの選択が要る。
+                          レイヤーごとのチェックは高さが変わる唯一の要素なので、枠の一番下に来る。
+                          トレイの「表示の仕方」と同じ並び。
+                        -->
+                        <RadioButton x:Name="ModeAlwaysRadio" GroupName="Mode" Checked="OnModeChecked" />
+                        <TextBlock x:Name="ModeAlwaysNote" Style="{StaticResource Note}" Margin="28,0,0,8" />
                         <RadioButton x:Name="ModeLayersOnlyRadio" GroupName="Mode" Checked="OnModeChecked" />
                         <TextBlock x:Name="ModeLayersOnlyNote" Style="{StaticResource Note}" Margin="28,0,0,8" />
                         <RadioButton x:Name="ModeSelectedRadio" GroupName="Mode" Checked="OnModeChecked" />
                         <TextBlock x:Name="ModeSelectedNote" Style="{StaticResource Note}" Margin="28,0,0,4" />
                         <!-- レイヤーごとのチェック。キーマップによって数が変わるのでコードで作る。この見せ方のときだけ出す。 -->
                         <WrapPanel x:Name="ShownLayersList" ItemWidth="300" Margin="28,0,0,8" />
-                        <RadioButton x:Name="ModeAlwaysRadio" GroupName="Mode" Checked="OnModeChecked" />
-                        <TextBlock x:Name="ModeAlwaysNote" Style="{StaticResource Note}" Margin="28,0,0,8" />
 
                         <TextBlock x:Name="LookSection" Style="{StaticResource Section}" />
                         <DockPanel Margin="0,4">
@@ -116,6 +132,13 @@
                                    Visibility="Collapsed" />
                         <Button x:Name="ResetOffsetButton" HorizontalAlignment="Left" Margin="28,0,0,4"
                                 Click="OnResetOffset" Visibility="Collapsed" />
+                        <!-- 同じ見出しの下に、設定とその切り替えの鍵を揃える。 -->
+                        <DockPanel Margin="28,8,0,0">
+                            <TextBlock x:Name="ClickThroughHotkeyLabel" Style="{StaticResource FieldLabel}" />
+                            <TextBox x:Name="ClickThroughHotkeyBox" Width="220" HorizontalAlignment="Left" IsReadOnly="True"
+                                     IsReadOnlyCaretVisible="False" />
+                        </DockPanel>
+                        <TextBlock x:Name="ClickThroughHotkeyNote" Style="{StaticResource Note}" Margin="208,0,0,6" />
 
                         <TextBlock x:Name="PreviewSection" Style="{StaticResource Section}" />
                         <!-- 半透過の見え方が分かるよう、画面の壁紙に近い色の上に置く。 -->
@@ -142,20 +165,30 @@
                             <RadioButton x:Name="SyncToggleRadio" GroupName="SyncMode" Checked="OnSyncModeChecked" />
                         </StackPanel>
 
+                        <!--
+                          表の列を有効にする 2 つのスイッチ（追従 → 合図キーとテスト、手で出すキー → ショートカット）を
+                          表の上に並べる。以前は「ショートカット」のページにあり、レイヤーごとの設定が散らばっていた。
+                        -->
+                        <CheckBox x:Name="ManualKeysBox" Margin="0,16,0,0" Click="OnManualKeysClick" />
+                        <TextBlock x:Name="ManualKeysNote" Style="{StaticResource Note}" Margin="28,0,0,0" />
+
                         <TextBlock x:Name="LayerTableSection" Style="{StaticResource Section}" />
                         <TextBlock x:Name="LayerTableNote" Style="{StaticResource Note}" />
+                        <TextBlock x:Name="LayerHotkeyHint" Style="{StaticResource Note}" />
                         <!-- 列の幅は BuildLayerTable の行と揃えること。 -->
                         <Grid Margin="0,4,0,6">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="56" />
-                                <ColumnDefinition Width="240" />
-                                <ColumnDefinition Width="160" />
+                                <ColumnDefinition Width="44" />
+                                <ColumnDefinition Width="180" />
+                                <ColumnDefinition Width="120" />
+                                <ColumnDefinition Width="52" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <TextBlock x:Name="ColumnLayer" FontWeight="SemiBold" />
                             <TextBlock x:Name="ColumnName" Grid.Column="1" FontWeight="SemiBold" />
                             <TextBlock x:Name="ColumnSignal" Grid.Column="2" FontWeight="SemiBold" />
                             <TextBlock x:Name="ColumnTest" Grid.Column="3" FontWeight="SemiBold" />
+                            <TextBlock x:Name="ColumnShortcut" Grid.Column="4" FontWeight="SemiBold" />
                         </Grid>
                         <StackPanel x:Name="LayerTable" />
                         <TextBlock x:Name="SignalTestHint" Style="{StaticResource Note}" Margin="0,12,0,0" />
@@ -230,32 +263,6 @@
                     </StackPanel>
 
                     <!-- ===== ショートカット ===== -->
-                    <StackPanel x:Name="ShortcutsPage" Visibility="Collapsed">
-                        <TextBlock x:Name="HotkeyHint" Style="{StaticResource Note}" Margin="0,8,0,10" />
-                        <DockPanel Margin="0,4">
-                            <TextBlock x:Name="ToggleHotkeyLabel" Style="{StaticResource FieldLabel}" />
-                            <TextBox x:Name="HotkeyBox" Width="220" HorizontalAlignment="Left" IsReadOnly="True"
-                                     IsReadOnlyCaretVisible="False"
-                                     GotKeyboardFocus="OnHotkeyFocus" LostKeyboardFocus="OnHotkeyBlur"
-                                     PreviewKeyDown="OnHotkeyKeyDown" />
-                        </DockPanel>
-                        <!-- Tag は object 型で型変換が働かないので、見分けの印はコードビハインドで入れる。 -->
-                        <DockPanel Margin="0,4">
-                            <TextBlock x:Name="ClickThroughHotkeyLabel" Style="{StaticResource FieldLabel}" />
-                            <TextBox x:Name="ClickThroughHotkeyBox" Width="220" HorizontalAlignment="Left" IsReadOnly="True"
-                                     IsReadOnlyCaretVisible="False"
-                                     GotKeyboardFocus="OnHotkeyFocus" LostKeyboardFocus="OnHotkeyBlur"
-                                     PreviewKeyDown="OnHotkeyKeyDown" />
-                        </DockPanel>
-                        <TextBlock x:Name="ClickThroughHotkeyNote" Style="{StaticResource Note}" Margin="180,0,0,6" />
-
-                        <TextBlock x:Name="LayerShortcutsSection" Style="{StaticResource Section}" />
-                        <CheckBox x:Name="ManualKeysBox" Click="OnManualKeysClick" />
-                        <TextBlock x:Name="ManualKeysNote" Style="{StaticResource Note}" Margin="28,0,0,10" />
-                        <!-- レイヤーごとの入力欄。キーマップによって数が変わるのでコードで作る。 -->
-                        <StackPanel x:Name="LayerShortcutList" />
-                    </StackPanel>
-
                     <!-- ===== 全般 ===== -->
                     <StackPanel x:Name="GeneralPage" Visibility="Collapsed">
                         <DockPanel Margin="0,12,0,4">

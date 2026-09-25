@@ -141,10 +141,10 @@ public class ConfigRecoveryTests : IDisposable
 [Collection(LanguageSwitchingCollection.Name)]
 public class HotkeyRulesTests
 {
-    /// <summary>ドイツ語配列のように、Ctrl+Alt（AltGr）+ 数字と K で文字が出る PC のふり。</summary>
+    /// <summary>ドイツ語配列のように、Ctrl+Alt（AltGr）+ 数字と K・M で文字が出る PC のふり。</summary>
     private static bool AltGrLayout(HotkeySpec spec) =>
         spec.Has("ctrl") && spec.Has("alt") && !spec.Has("shift")
-        && (spec.Key.Length == 1 && char.IsDigit(spec.Key[0]) || spec.Key == "K");
+        && (spec.Key.Length == 1 && char.IsDigit(spec.Key[0]) || spec.Key is "K" or "M");
 
     private static void WithRule(Func<HotkeySpec, bool> rule, Action test)
     {
@@ -182,11 +182,20 @@ public class HotkeyRulesTests
     }
 
     [Fact]
+    public void ClickThroughDefaultAvoidsCombinationsThatTypeCharacters()
+    {
+        WithRule(_ => false, () => Assert.Equal("Ctrl+Alt+M", HotkeyRules.ChooseDefaultClickThrough().ToString()));
+        WithRule(AltGrLayout, () => Assert.Equal("Ctrl+Alt+Shift+M", HotkeyRules.ChooseDefaultClickThrough().ToString()));
+        WithRule(spec => spec.Key == "M", () => Assert.Equal("Ctrl+Alt+F11", HotkeyRules.ChooseDefaultClickThrough().ToString()));
+    }
+
+    [Fact]
     public void ChosenDefaultIsACopy() => WithRule(_ => false, () =>
     {
-        var chosen = HotkeyRules.ChooseDefaultToggle();
-        chosen.Key = "Q";
+        HotkeyRules.ChooseDefaultToggle().Key = "Q";
+        HotkeyRules.ChooseDefaultClickThrough().Key = "Q";
 
         Assert.Equal("K", HotkeyRules.ToggleCandidates[0].Key);
+        Assert.Equal("M", HotkeyRules.ClickThroughCandidates[0].Key);
     });
 }

@@ -8,15 +8,24 @@ public class AppConfigTests : IDisposable
         Path.Combine(Path.GetTempPath(), "zmk-config-" + Guid.NewGuid().ToString("N") + ".json");
 
     [Fact]
-    public void LayersOnlyIsTheDefaultDisplayMode()
-        => Assert.False(new AppConfig().IsAlwaysVisible);
+    public void AlwaysIsTheDefaultDisplayMode()
+    {
+        // 合図を送らない人のオーバーレイが、一度も出ないまま終わらないように。
+        var config = new AppConfig();
+
+        Assert.Equal(DisplayModes.Always, config.DisplayMode);
+        Assert.True(config.IsAlwaysVisible);
+        Assert.True(config.ShowsLayer(0, baseLayerId: 0));
+    }
 
     [Theory]
     [InlineData("always", true)]
     [InlineData("ALWAYS", true)]
     [InlineData("layersOnly", false)]
-    [InlineData("", false)]
-    public void AlwaysIsTheOnlyValueThatKeepsItVisible(string value, bool always)
+    [InlineData("selectedLayers", false)]
+    [InlineData("", true)]              // 知らない値は既定として扱う
+    [InlineData("layers-only", true)]   // 綴り違いで「一度も出ない」にはしない
+    public void OnlyTheTwoNamedModesTurnOffAlwaysVisible(string value, bool always)
         => Assert.Equal(always, new AppConfig { DisplayMode = value }.IsAlwaysVisible);
 
     [Fact]
@@ -31,7 +40,7 @@ public class AppConfigTests : IDisposable
     [InlineData("layersOnly", false, true, true)]
     [InlineData("always", true, true, true)]
     [InlineData("selectedLayers", false, false, true)]
-    [InlineData("somethingNew", false, true, true)]   // 知らない値は layersOnly として扱う
+    [InlineData("somethingNew", true, true, true)]   // 知らない値は既定（always）として扱う
     public void EachDisplayModeDecidesWhichLayersShow(string mode, bool baseShown, bool l1Shown, bool l2Shown)
     {
         var config = new AppConfig { DisplayMode = mode, HiddenLayers = new() { 0, 1 } };
@@ -156,7 +165,7 @@ public class AppConfigTests : IDisposable
         Assert.Equal(50, original.KeyUnitPx);
         Assert.Single(original.Zmk.SignalKeys);
         Assert.Equal("K", original.ToggleHotkey.Key);
-        Assert.Equal("", original.ClickThroughHotkey.Key);
+        Assert.Equal("M", original.ClickThroughHotkey.Key);
         Assert.Equal(0, original.OffsetX);
 
         copy.Save(_path);
@@ -210,11 +219,47 @@ public class AppConfigTests : IDisposable
     }
 
     [Fact]
-    public void NoShortcutSwitchesClickThroughUntilOneIsChosen()
+    public void AShortcutSwitchesClickThroughFromTheStart()
     {
-        // 既定を決めない。押さえる組み合わせがその PC で使えるとは限らないため。
-        Assert.Null(new AppConfig().EffectiveClickThroughHotkey);
-        Assert.Equal("", new AppConfig().ClickThroughHotkey.ToString());
+        // 既定が無いと、オーバーレイを触れるようにする手段が設定画面の中だけになる。
+        Assert.Equal("Ctrl+Alt+M", new AppConfig().EffectiveClickThroughHotkey?.ToString());
+    }
+
+    [Fact]
+    public void ClearingTheClickThroughShortcutLeavesNone()
+    {
+        // 入力欄で Delete を押したときの形。有効 / 無効のキーと違って外せる。
+        var config = new AppConfig { ClickThroughHotkey = new HotkeySpec() };
+
+        Assert.Null(config.EffectiveClickThroughHotkey);
+        Assert.Equal("", config.ClickThroughHotkey.ToString());
+    }
+
+    [Fact]
+    public void TheTwoOverlayShortcutDefaultsNeverCollide()
+    {
+        // 同じ組み合わせを 2 か所に登録すると、後から登録したほうが黙って効かなくなる。
+        // どちらの候補も、レイヤーの既定（Ctrl+Alt+0〜9）と合図キー（F13〜F24）も避けること。
+        foreach (var toggle in HotkeyRules.ToggleCandidates)
+        {
+            Assert.DoesNotContain(toggle, HotkeyRules.ClickThroughCandidates, SpecComparer.Instance);
+
+            foreach (var spec in HotkeyRules.ClickThroughCandidates.Append(toggle))
+            {
+                Assert.DoesNotMatch(@"^F(1[3-9]|2[0-4])$", spec.Key);
+
+                for (var layer = 0; layer <= 9; layer++)
+                    Assert.False(spec.SameAs(HotkeyRules.DefaultLayerHotkey(layer)!), $"{spec} = L{layer}");
+            }
+        }
+    }
+
+    private sealed class SpecComparer : IEqualityComparer<HotkeySpec>
+    {
+        public static readonly SpecComparer Instance = new();
+
+        public bool Equals(HotkeySpec? a, HotkeySpec? b) => a is not null && b is not null && a.SameAs(b);
+        public int GetHashCode(HotkeySpec spec) => 0;
     }
 
     [Fact]

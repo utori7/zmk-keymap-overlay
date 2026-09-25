@@ -33,7 +33,7 @@ A file given with `--config` is for development, so a corrupt one is not moved a
 | Key | Default | Meaning |
 |---|---|---|
 | `language` | `auto` | Display language. `ja` / `en`. `auto` follows the Windows display language |
-| `displayMode` | `layersOnly` | How it shows while enabled. `layersOnly` = only while you are on layer 1 or above / `selectedLayers` = only while you are on a layer that is not in `hiddenLayers` / `always` = always shown. An unknown value is treated as `layersOnly` |
+| `displayMode` | `always` | How it shows while enabled. `always` = always shown / `layersOnly` = only while you are on layer 1 or above / `selectedLayers` = only while you are on a layer that is not in `hiddenLayers`. An unknown value is treated as the default, `always` |
 | `hiddenLayers` | `[0]` | Layer numbers not to show in `selectedLayers` mode, e.g. `[0, 1]`. Remove `0` to show L0 when no layer key is held. Layers not listed — including ones you add later — are shown |
 | `keyUnitPx` | `44` | Pixels for one key unit (1u). This sets the overall size |
 | `opacity` | `0.88` | Opacity of the overlay |
@@ -43,7 +43,7 @@ A file given with `--config` is for development, so a corrupt one is not moved a
 | `clickThrough` | `true` | Whether clicks pass through to the app underneath. Set it to `false` and the overlay takes clicks and drags instead (pick a layer with the tabs along the top, drag the overlay where you want it). Either way it never takes focus from the app you are typing in |
 | `keyboardLayout` | (see below) | This PC's keyboard layout (`jis` / `us`). The same key types a different symbol depending on it. On the first run it is written to match your keyboard (`jis` for a Japanese keyboard, `us` otherwise). If the key is missing, `jis` is assumed |
 | `toggleHotkey` | `Ctrl+Alt+K` | Enables / disables the overlay. `{"modifiers": ["Ctrl","Alt"], "key": "K"}`. On the first run, if Ctrl+Alt+K types a character with this PC's layout (AltGr), `Ctrl+Alt+Shift+K` is written instead, or `Ctrl+Alt+F12` if that is taken too |
-| `clickThroughHotkey` | none | Switches `clickThrough`. Written like `toggleHotkey`. Nothing is assigned by default, because which combinations are free differs per PC. An empty `key` means no shortcut |
+| `clickThroughHotkey` | `Ctrl+Alt+M` | Switches `clickThrough`. Written like `toggleHotkey`. On the first run, if Ctrl+Alt+M types a character with this PC's layout, `Ctrl+Alt+Shift+M` is written instead, or `Ctrl+Alt+F11` if that is taken too. An empty `key` means no shortcut |
 | `enableManualLayerKeys` | `true` | Show layers by hand with shortcuts |
 | `layerHotkeys` | none | Layer number → shortcut, e.g. `{"1": {"modifiers": ["Ctrl","Shift"], "key": "Q"}}`. Without an entry, `Ctrl+Alt+<number>` (0–9) is used — unless that combination types a character with this PC's layout, in which case nothing is assigned. An empty `key` means no shortcut |
 | `layerSync.enabled` | `true` | Follow the keyboard's layers |
@@ -114,9 +114,13 @@ else you do. `displayMode` chooses how it shows while it is enabled.
 
 | | While disabled | While enabled |
 |---|---|---|
-| `layersOnly` (default) | Not shown | **Shown only while you are on layer 1 or above.** Not shown on L0 |
+| `always` (default) | Not shown | Always shown. The contents follow the active layer, and go back to L0 when you let go |
+| `layersOnly` | Not shown | **Shown only while you are on layer 1 or above.** Not shown on L0 |
 | `selectedLayers` | Not shown | **Shown only while you are on a layer that is not in `hiddenLayers`.** L0 can be chosen too |
-| `always` | Not shown | Always shown. The contents follow the active layer, and go back to L0 when you let go |
+
+The default is `always` because sending signals from the keyboard is experimental: using the overlay as a
+cheat sheet, without touching your keyboard, has to work from the moment you install it. `layersOnly` and
+`selectedLayers` assume either those signals or a shortcut you press by hand.
 
 L0 (the base layer) is not shown in `layersOnly` because it is the state of holding nothing.
 

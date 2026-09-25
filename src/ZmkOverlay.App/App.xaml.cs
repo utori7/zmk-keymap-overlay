@@ -239,6 +239,9 @@ public partial class App : Application, ISettingsHost
         window.WindowStartupLocation = WindowStartupLocation.Manual;
         window.Left = -20000;
         window.Top = -20000;
+
+        // ウィンドウを高くしても、Windows が作業領域の高さで抑える（WM_GETMINMAXINFO の ptMaxTrackSize）。
+        // 縦に長いページの下が切れるので、高さは RenderWholePage が中身を測り直して決める。
         window.Height = 1300;
         window.Show();
 
@@ -251,7 +254,7 @@ public partial class App : Application, ISettingsHost
             window.UpdateLayout();
 
             var file = System.IO.Path.Combine(outputDir, $"{prefix}-{page.ToString().ToLowerInvariant()}.png");
-            Render.OffscreenRenderer.RenderAsShown(window, file);
+            Render.OffscreenRenderer.RenderWholePage(window, file);
             Console.WriteLine(file);
         }
 
@@ -413,6 +416,7 @@ public partial class App : Application, ISettingsHost
 
             // AltGr で文字を打つ配列では、Ctrl+Alt+K を取ると文字が打てなくなる。
             ToggleHotkey = HotkeyRules.ChooseDefaultToggle(),
+            ClickThroughHotkey = HotkeyRules.ChooseDefaultClickThrough(),
         };
 
         created.Save(path);
@@ -636,7 +640,7 @@ public partial class App : Application, ISettingsHost
     private void SetClickThrough(bool clickThrough)
     {
         // 触れるようにするための切り替えなのに、反映の途中で AtRest() が走って板が消えてしまう
-        // （既定の「L1 以上のときだけ表示」では、レイヤーキーを押していない状態は非表示）。
+        // （「L1 以上のときだけ表示」では、レイヤーキーを押していない状態は非表示）。
         // 触る対象が無くならないよう、いま出ているレイヤーを手で選んだことにして押さえておく。
         if (!clickThrough) _overlay!.PinCurrentLayer();
 
@@ -842,7 +846,7 @@ public partial class App : Application, ISettingsHost
     /// </summary>
     private void RegisterClickThroughHotKey(AppConfig config)
     {
-        // 既定は割り当てなし。この PC で使える組み合わせを勝手に決めない。
+        // 既定はあるので、割り当てが無いのは利用者が Delete で外した結果。何も言わない。
         if (config.EffectiveClickThroughHotkey is not { } spec)
         {
             _clickThroughFailureNotified = null;
@@ -871,7 +875,7 @@ public partial class App : Application, ISettingsHost
         if (_clickThroughFailureNotified == text) return;
         _clickThroughFailureNotified = text;
 
-        // 利用者が自分で選んだ組み合わせなので、効かないことは知らせる。
+        // 押しても何も起きない組み合わせが画面に出たままになるので、効かないことは知らせる。
         _tray?.Notify(UiText.CannotRegisterHotkey, error ?? UiText.UnknownCause,
             System.Windows.Forms.ToolTipIcon.Warning);
     }

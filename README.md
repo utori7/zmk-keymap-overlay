@@ -9,7 +9,7 @@ While you hold a layer key, that layer's keys appear.
 
 ## Features
 
-- Shows a layer only while its layer key is held. You can also keep it on screen all the time, or show it only on the layers you pick, leaving out the ones you already know
+- Keeps your keymap on the edge of the screen (the default). You can also switch to showing a layer only while its layer key is held, or only on the layers you pick, leaving out the ones you already know
 - Reads your zmk-config directly — just paste the GitHub URL, or pick a `.keymap` file on your PC
 - Works out where the keys are (the physical layout)
   - uses the one in your zmk-config if there is one
@@ -88,12 +88,13 @@ If you open it with **Report the result** in the setup guide's "Try it out" step
 - **Left-click the tray icon** (bottom right of the screen) for the menu.
   If you can't see it, it is under **^** on the taskbar
 - **Ctrl+Alt+K** turns the overlay on and off
+- **Ctrl+Alt+M** lets the overlay take the mouse, so you can click a tab to pick a layer and drag the overlay where you want it
 - **Ctrl+Alt+number** shows a layer (you can change these in Settings)
 - **Settings** (tray → Settings…)
-  - Display: when to show (including which layers), size, opacity, position
-  - Layers: following the keyboard's layers, layer names, signal keys
+  - Display: when to show (including which layers), size, opacity, position, and the two shortcuts above
+  - Layers: following the keyboard's layers, layer names, signal keys, a shortcut per layer
   - Keyboard: where your keymap comes from, key positions, this PC's layout (JIS / US)
-  - Shortcuts, and General: language, start when signing in
+  - General: language, start when signing in
 
 On layouts that type symbols with AltGr (which Windows treats as Ctrl+Alt), such as German, holding a Ctrl+Alt
 combination as a shortcut would stop you typing those symbols. The app never takes a combination that types a
@@ -135,7 +136,7 @@ Settings → General → About.
 
 ## FAQ
 
-- **A shortcut does nothing** — another app is probably using the same combination. Pick another one in Settings → Shortcuts
+- **A shortcut does nothing** — another app is probably using the same combination. Pick another one in Settings → Display (turning the overlay on/off and using it) or Settings → Layers (the per-layer shortcuts)
 - **Some layers are not followed** — the setup guide's "layer signals" step tells you why
   (for example, layers entered with `&tog`)
 - **The keys are in the wrong places** — in Settings → Keyboard, try **Get from ZMK** (the shield name is in your build.yaml).

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Threading.Tasks;
 using System.Windows.Threading;
 using ZmkOverlay.Core.Zmk;
@@ -18,23 +19,12 @@ using ZmkOverlay.Core.Text;
 
 namespace ZmkOverlay.App.Settings;
 
-/// <summary>
-/// ショートカットの入力欄が何に割り当てるものか。レイヤーの欄は Tag にレイヤー番号（int）を持つので、
-/// ここに並べるのはレイヤー以外だけ。
-/// </summary>
-internal enum HotkeyTarget
-{
-    Toggle,
-    ClickThrough,
-}
-
 /// <summary>設定画面のページ。左の一覧と同じ順に並べること（<see cref="SettingsWindow.ShowPage"/> は番号で引く）。</summary>
 public enum SettingsPage
 {
     Display,
     Layers,
     Keyboard,
-    Shortcuts,
     General,
 }
 
@@ -68,7 +58,10 @@ public partial class SettingsWindow : Window
     private readonly HashSet<int> _received = new();
     private readonly Dictionary<int, TextBlock> _signalMarks = new();
 
-    /// <summary>レイヤーごとのショートカット入力欄。Tag にレイヤー番号を持つ。</summary>
+    /// <summary>ショートカットの記録。初期設定の案内と同じ処理を使う。</summary>
+    private readonly HotkeyCapture _capture;
+
+    /// <summary>レイヤーの表の中のショートカット入力欄。表を作り直すときに捨てる。</summary>
     private readonly List<TextBox> _layerShortcutBoxes = new();
 
     private GitHubSource _gitHub => _host.GitHub;
@@ -77,7 +70,6 @@ public partial class SettingsWindow : Window
     private GitHubLocation? _gitHubLocation;
     private GitHubTree? _gitHubTree;
 
-    private IDisposable? _hotkeySuspension;
     private UiLanguage? _textsLanguage;
 
     /// <summary>InitializeComponent 中にも値変更イベントが飛ぶので、準備が終わるまで無視する。</summary>
@@ -91,11 +83,12 @@ public partial class SettingsWindow : Window
         InitializeComponent();
 
         _host = host;
-        _pages = new FrameworkElement[] { DisplayPage, LayersPage, KeyboardPage, ShortcutsPage, GeneralPage };
+        _pages = new FrameworkElement[] { DisplayPage, LayersPage, KeyboardPage, GeneralPage };
 
-        // Tag は object 型で、XAML から入れると型変換が働かず文字列になる。見分けの印はここで入れる。
-        HotkeyBox.Tag = HotkeyTarget.Toggle;
-        ClickThroughHotkeyBox.Tag = HotkeyTarget.ClickThrough;
+        // Esc やキーの確定でフォーカスを渡す先。反映より先に抜けて、ホットキーの一時解除を終わらせる。
+        _capture = new HotkeyCapture(_host, Apply, () => Nav.Focus());
+        _capture.Attach(HotkeyBox, HotkeyTarget.Toggle);
+        _capture.Attach(ClickThroughHotkeyBox, HotkeyTarget.ClickThrough);
 
         _debounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
         _debounce.Tick += (_, _) =>
@@ -110,14 +103,14 @@ public partial class SettingsWindow : Window
         _host.SignalReceived += OnSignalReceived;
 
         // 別のアプリに切り替えたときにショートカットを外したままにしない。
-        Deactivated += (_, _) => EndHotkeyCapture();
+        Deactivated += (_, _) => _capture.End();
 
         Closed += (_, _) =>
         {
             _host.Applied -= OnApplied;
             _host.SignalReceived -= OnSignalReceived;
             _debounce.Stop();
-            EndHotkeyCapture();
+            _capture.End();
         };
 
         VersionText.Text = ProjectLinks.AppVersion;
@@ -273,6 +266,7 @@ public partial class SettingsWindow : Window
 
             // レイヤー
             SyncEnabledBox.IsChecked = config.LayerSync.Enabled;
+            ManualKeysBox.IsChecked = config.EnableManualLayerKeys;
             SyncHoldRadio.IsChecked = config.LayerSync.IsHoldMode;
             SyncToggleRadio.IsChecked = !config.LayerSync.IsHoldMode;
             SyncHoldRadio.IsEnabled = SyncToggleRadio.IsEnabled = config.LayerSync.Enabled;
@@ -280,13 +274,8 @@ public partial class SettingsWindow : Window
             LayerTableNote.Text = fromZmk ? UiText.LayerTableNote : UiText.SampleCannotChange;
             BuildLayerTable(namesEditable: fromZmk, signalsEditable: fromZmk && config.LayerSync.Enabled);
 
-            // ショートカット。入力中は「押してください」を上書きしない。
-            if (!HotkeyBox.IsKeyboardFocused) HotkeyBox.Text = ShortcutText(HotkeyBox.Tag);
-
-            if (!ClickThroughHotkeyBox.IsKeyboardFocused)
-                ClickThroughHotkeyBox.Text = ShortcutText(ClickThroughHotkeyBox.Tag);
-            ManualKeysBox.IsChecked = config.EnableManualLayerKeys;
-            BuildLayerShortcuts();
+            // ショートカットの欄。記録の途中なら、「押してください」や衝突の理由を上書きしない。
+            _capture.RefreshText(skipFocused: true);
 
             // 全般
             var language = Array.FindIndex(Languages, l => l.Equals(config.Language, StringComparison.OrdinalIgnoreCase));
@@ -443,10 +432,15 @@ public partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// レイヤーごとの名前・合図キー・テストの表。列の幅は XAML の見出しと揃える。
+    /// レイヤーごとの名前・合図キー・テスト・手で出すショートカットの表。
+    /// レイヤーごとの設定はすべてこの 1 行に集める。列の幅は XAML の見出しと揃える。
     /// </summary>
     private void BuildLayerTable(bool namesEditable, bool signalsEditable)
     {
+        // 作り直す前に、前の入力欄を記録の対象から外す。残すとイベントが宛先を失う。
+        foreach (var box in _layerShortcutBoxes) _capture.Detach(box);
+        _layerShortcutBoxes.Clear();
+
         LayerTable.Children.Clear();
         _signalMarks.Clear();
 
@@ -458,17 +452,22 @@ public partial class SettingsWindow : Window
             var id = layer.Index;
 
             var row = new Grid { Margin = new Thickness(0, 0, 0, 6) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(240) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(44) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(52) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
             row.Children.Add(new TextBlock { Text = $"L{id}", VerticalAlignment = VerticalAlignment.Center });
 
+            // 手で出すショートカットは、合図キーを持たないレイヤー（L0 を含む）でも使える。
+            // 先に入れておき、合図キーを持たない行でも欄が抜けないようにする。
+            AddShortcutCell(row, id);
+
             var name = new TextBox
             {
                 Text = layer.Name,
-                Width = 220,
+                Width = 170,
                 HorizontalAlignment = HorizontalAlignment.Left,
                 VerticalContentAlignment = VerticalAlignment.Center,
                 IsEnabled = namesEditable,
@@ -502,7 +501,7 @@ public partial class SettingsWindow : Window
                 continue;
             }
 
-            var combo = new ComboBox { Width = 140, HorizontalAlignment = HorizontalAlignment.Left, IsEnabled = signalsEditable };
+            var combo = new ComboBox { Width = 110, HorizontalAlignment = HorizontalAlignment.Left, IsEnabled = signalsEditable };
             combo.Items.Add(UiText.NoSignal);
             foreach (var key in SignalKeyChoices) combo.Items.Add(key);
 
@@ -572,59 +571,51 @@ public partial class SettingsWindow : Window
         else mark.ClearValue(TextBlock.ForegroundProperty);
     }
 
-    private void BuildLayerShortcuts()
+    /// <summary>
+    /// レイヤーの行の 5 列目。手で出すショートカットの入力欄と、既定に戻すボタン。
+    ///
+    /// Delete（割り当てを外す）と「既定に戻す」（上書きを消して Ctrl+Alt+番号 に戻す）は別物なので、
+    /// 両方残してある。ボタンは列の幅に収まらないので記号にし、名前はツールチップと支援技術に渡す。
+    /// </summary>
+    private void AddShortcutCell(Grid row, int id)
     {
-        LayerShortcutList.Children.Clear();
-        _layerShortcutBoxes.Clear();
-
         var config = _host.Config;
+        var key = id.ToString(CultureInfo.InvariantCulture);
 
-        foreach (var layer in _host.Keymap.Layers)
+        var cell = new DockPanel { LastChildFill = false };
+
+        var box = new TextBox
         {
-            var id = layer.Index;
-            var key = id.ToString(CultureInfo.InvariantCulture);
+            Width = 190,
+            IsReadOnly = true,
+            IsReadOnlyCaretVisible = false,
+            IsEnabled = config.EnableManualLayerKeys,
+        };
 
-            var row = new DockPanel { Margin = new Thickness(0, 0, 0, 6), LastChildFill = false };
+        AutomationProperties.SetName(box, UiText.LayerShortcutUse(id));
+        _capture.Attach(box, id);
 
-            row.Children.Add(new TextBlock
-            {
-                Text = $"L{id} {layer.Name}".TrimEnd(),
-                Width = 180,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-            });
+        var reset = new Button
+        {
+            // 「元に戻す」の記号。Segoe UI には無い字なので、Windows に必ず入っている記号フォントから取る。
+            Content = new TextBlock { Text = "", FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 12 },
+            Width = 32,
+            Margin = new Thickness(8, 0, 0, 0),
+            ToolTip = UiText.ResetToDefault,
+            IsEnabled = config.EnableManualLayerKeys && config.LayerHotkeys.ContainsKey(key),
+        };
 
-            var box = new TextBox
-            {
-                Tag = id,
-                Width = 220,
-                IsReadOnly = true,
-                IsReadOnlyCaretVisible = false,
-                IsEnabled = config.EnableManualLayerKeys,
-                Text = ShortcutText(id),
-            };
+        AutomationProperties.SetName(reset, $"L{id} {UiText.ResetToDefault}");
 
-            AutomationProperties.SetName(box, UiText.LayerShortcutUse(id));
+        reset.Click += (_, _) => Apply(c => c.LayerHotkeys.Remove(key));
 
-            box.GotKeyboardFocus += OnHotkeyFocus;
-            box.LostKeyboardFocus += OnHotkeyBlur;
-            box.PreviewKeyDown += OnHotkeyKeyDown;
+        cell.Children.Add(box);
+        cell.Children.Add(reset);
 
-            var reset = new Button
-            {
-                Content = UiText.ResetToDefault,
-                Margin = new Thickness(8, 0, 0, 0),
-                IsEnabled = config.EnableManualLayerKeys && config.LayerHotkeys.ContainsKey(key),
-            };
+        _layerShortcutBoxes.Add(box);
 
-            reset.Click += (_, _) => Apply(c => c.LayerHotkeys.Remove(key));
-
-            row.Children.Add(box);
-            row.Children.Add(reset);
-
-            _layerShortcutBoxes.Add(box);
-            LayerShortcutList.Children.Add(row);
-        }
+        Grid.SetColumn(cell, 4);
+        row.Children.Add(cell);
     }
 
     // ---- 文言 ----
@@ -644,7 +635,6 @@ public partial class SettingsWindow : Window
             NavDisplay.Content = UiText.PageDisplay;
             NavLayers.Content = UiText.PageLayers;
             NavKeyboard.Content = UiText.PageKeyboard;
-            NavShortcuts.Content = UiText.PageShortcuts;
             NavGeneral.Content = UiText.PageGeneral;
 
             SampleNote.Text = UiText.SampleNote;
@@ -674,13 +664,15 @@ public partial class SettingsWindow : Window
             NoWarnings.Text = UiText.NoWarnings;
 
             ShowWhenSection.Text = UiText.SectionShowWhen;
+            ModeAlwaysRadio.Content = UiText.ModeAlways;
+            ModeAlwaysNote.Text = UiText.ModeAlwaysTip;
             ModeLayersOnlyRadio.Content = UiText.ModeLayersOnly;
             ModeLayersOnlyNote.Text = UiText.ModeLayersOnlyTip;
             ModeSelectedRadio.Content = UiText.ModeSelected;
             ModeSelectedNote.Text = UiText.ModeSelectedTip;
-            ModeAlwaysRadio.Content = UiText.ModeAlways;
-            ModeAlwaysNote.Text = UiText.ModeAlwaysTip;
             StatusSection.Text = UiText.SectionStatus;
+            ToggleHotkeyLabel.Text = UiText.ToggleHotkeyLabel;
+            DisplayHotkeyHint.Text = UiText.HotkeyHint;
             MarginCenterNote.Text = UiText.MarginUnusedAtCenter;
             LookSection.Text = UiText.SectionLook;
             SizeLabel.Text = UiText.SizeLabel;
@@ -693,6 +685,8 @@ public partial class SettingsWindow : Window
             ClickableNote.Text = UiText.ClickableNote;
             ResetOffsetNote.Text = UiText.ResetOffsetNote;
             ResetOffsetButton.Content = UiText.ResetOffset;
+            ClickThroughHotkeyLabel.Text = UiText.ClickThroughHotkeyLabel;
+            ClickThroughHotkeyNote.Text = UiText.ClickThroughHotkeyNote;
 
             var position = PositionBox.SelectedIndex;
             PositionBox.Items.Clear();
@@ -718,20 +712,16 @@ public partial class SettingsWindow : Window
             SyncEnabledBox.Content = UiText.SyncEnabled;
             SyncHoldRadio.Content = UiText.SyncHold;
             SyncToggleRadio.Content = UiText.SyncToggle;
+            ManualKeysBox.Content = UiText.ManualKeys;
+            ManualKeysNote.Text = UiText.ManualKeysNote;
             LayerTableSection.Text = UiText.SectionLayerTable;
+            LayerHotkeyHint.Text = UiText.HotkeyHint;
             ColumnLayer.Text = UiText.ColumnLayer;
             ColumnName.Text = UiText.ColumnName;
             ColumnSignal.Text = UiText.ColumnSignal;
             ColumnTest.Text = UiText.ColumnTest;
+            ColumnShortcut.Text = UiText.ColumnShortcut;
             SignalTestHint.Text = UiText.SignalTestHint;
-
-            HotkeyHint.Text = UiText.HotkeyHint;
-            ToggleHotkeyLabel.Text = UiText.ToggleHotkeyLabel;
-            ClickThroughHotkeyLabel.Text = UiText.ClickThroughHotkeyLabel;
-            ClickThroughHotkeyNote.Text = UiText.ClickThroughHotkeyNote;
-            LayerShortcutsSection.Text = UiText.SectionLayerShortcuts;
-            ManualKeysBox.Content = UiText.ManualKeys;
-            ManualKeysNote.Text = UiText.ManualKeysNote;
 
             LanguageLabel.Text = UiText.LanguageLabel;
             var language = LanguageBox.SelectedIndex;
@@ -1025,164 +1015,6 @@ public partial class SettingsWindow : Window
     {
         var toggle = SyncToggleRadio.IsChecked == true;
         Apply(config => config.LayerSync.Mode = toggle ? "toggle" : "hold");
-    }
-
-    // ---- ショートカット ----
-    //
-    // 入力欄は「オーバーレイの有効 / 無効」「オーバーレイの操作」と、レイヤーごとの欄。
-    // Tag がレイヤー番号（int）ならレイヤーの欄、そうでなければ <see cref="HotkeyTarget"/>。記録の仕方は共通。
-
-    private string ShortcutText(object? target) => target switch
-    {
-        int layerId => _host.Config.ManualLayerHotkey(layerId)?.ToString() ?? UiText.NoShortcut,
-        HotkeyTarget.ClickThrough => _host.Config.EffectiveClickThroughHotkey?.ToString() ?? UiText.NoShortcut,
-        _ => _host.Config.ToggleHotkey.ToString(),
-    };
-
-    private void OnHotkeyFocus(object sender, KeyboardFocusChangedEventArgs e)
-    {
-        if (!_ready || sender is not TextBox box) return;
-
-        _hotkeySuspension ??= _host.SuspendHotkeys();
-        box.Text = UiText.PressKeys;
-    }
-
-    private void OnHotkeyBlur(object sender, KeyboardFocusChangedEventArgs e) => EndHotkeyCapture();
-
-    private void EndHotkeyCapture()
-    {
-        _hotkeySuspension?.Dispose();
-        _hotkeySuspension = null;
-
-        if (!_ready) return;
-
-        // 入力をやめたら、「押してください」などの表示を実際の割り当てに戻す。
-        HotkeyBox.Text = ShortcutText(HotkeyBox.Tag);
-        ClickThroughHotkeyBox.Text = ShortcutText(ClickThroughHotkeyBox.Tag);
-        foreach (var box in _layerShortcutBoxes) box.Text = ShortcutText(box.Tag);
-    }
-
-    private void OnHotkeyKeyDown(object sender, KeyEventArgs e)
-    {
-        if (sender is not TextBox box) return;
-
-        var layerTarget = box.Tag as int?;
-        var clickThroughTarget = box.Tag is HotkeyTarget.ClickThrough;
-        var key = e.Key == Key.System ? e.SystemKey : e.Key;
-
-        // Tab は入力欄から抜ける手段として残す。
-        if (key == Key.Tab && Keyboard.Modifiers == ModifierKeys.None) return;
-
-        e.Handled = true;
-
-        if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt
-                or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin
-                or Key.ImeProcessed or Key.DeadCharProcessed)
-            return;   // 修飾キーだけでは確定しない。本体のキーを待つ。
-
-        if (key == Key.Escape)
-        {
-            Nav.Focus();
-            return;
-        }
-
-        // レイヤーとオーバーレイの操作の欄は、Delete / BackSpace で割り当てを外せる。どちらも任意の割り当て。
-        // 有効 / 無効のキーは外させない。外すとアプリを呼び出す手段がトレイだけになる。
-        if (Keyboard.Modifiers == ModifierKeys.None && key is Key.Delete or Key.Back)
-        {
-            if (layerTarget is { } clearedLayer)
-            {
-                Nav.Focus();
-                Apply(config => config.LayerHotkeys[clearedLayer.ToString(CultureInfo.InvariantCulture)] = new HotkeySpec());
-                return;
-            }
-
-            if (clickThroughTarget)
-            {
-                Nav.Focus();
-                Apply(config => config.ClickThroughHotkey = new HotkeySpec());
-                return;
-            }
-        }
-
-        var modifiers = new List<string>();
-        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) modifiers.Add("Ctrl");
-        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Alt)) modifiers.Add("Alt");
-        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) modifiers.Add("Shift");
-        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Windows)) modifiers.Add("Win");
-
-        // 修飾なしの普通のキーを取ると、そのキーが一切打てなくなる。
-        if (modifiers.Count == 0 && key is not (>= Key.F13 and <= Key.F24))
-        {
-            box.Text = UiText.NeedModifier;
-            return;
-        }
-
-        var name = key is >= Key.D0 and <= Key.D9
-            ? ((int)(key - Key.D0)).ToString(CultureInfo.InvariantCulture)
-            : key.ToString();
-
-        var spec = new HotkeySpec { Modifiers = modifiers, Key = name };
-
-        // Shift+英字や、AltGr で記号を打つ配列での Ctrl+Alt+数字 など。押さえるとその文字が打てなくなる。
-        if (HotkeyRules.TypesCharacter(spec))
-        {
-            box.Text = UiText.ShortcutTypesCharacter(spec.ToString());
-            return;
-        }
-
-        // 同じ組み合わせを 2 か所に登録すると、後から登録したほうが黙って効かなくなる。
-        // 入力欄に留まったまま理由を見せ、別の組み合わせを押してもらう。
-        if (FindConflict(spec, box.Tag) is { } conflict)
-        {
-            box.Text = conflict;
-            return;
-        }
-
-        // 先に入力欄から抜けてホットキーの一時解除を終えてから反映する。
-        Nav.Focus();
-
-        if (layerTarget is { } layerId)
-            Apply(config => config.LayerHotkeys[layerId.ToString(CultureInfo.InvariantCulture)] = spec);
-        else if (clickThroughTarget)
-            Apply(config => config.ClickThroughHotkey = spec);
-        else
-            Apply(config => config.ToggleHotkey = spec);
-    }
-
-    /// <summary>その組み合わせがすでに何に使われているか。空いていれば null。</summary>
-    /// <param name="target">記録しようとしている欄の Tag。自分自身との衝突は数えない。</param>
-    private string? FindConflict(HotkeySpec spec, object? target)
-    {
-        var config = _host.Config;
-
-        var layerTarget = target as int?;
-        var isClickThrough = target is HotkeyTarget.ClickThrough;
-        var isToggle = layerTarget is null && !isClickThrough;
-
-        if (!isToggle && spec.SameAs(config.ToggleHotkey))
-            return UiText.ShortcutConflict(spec.ToString(), UiText.ToggleHotkeyLabel);
-
-        if (!isClickThrough
-            && config.EffectiveClickThroughHotkey is { } clickThrough
-            && spec.SameAs(clickThrough))
-            return UiText.ShortcutConflict(spec.ToString(), UiText.ClickThroughHotkeyLabel);
-
-        foreach (var layer in _host.Keymap.Layers)
-        {
-            if (layer.Index != layerTarget
-                && config.ManualLayerHotkey(layer.Index) is { } other
-                && spec.SameAs(other))
-                return UiText.ShortcutConflict(spec.ToString(), UiText.LayerShortcutUse(layer.Index));
-
-            // 合図キーは修飾キーの組み合わせすべてで押さえているので、修飾つきでも使えない。
-            if (config.LayerSync.Enabled
-                && layer.SignalKey is { } signal
-                && string.Equals(spec.Key.Trim(), signal.Trim(), StringComparison.OrdinalIgnoreCase))
-                return UiText.ShortcutConflict(spec.ToString(), UiText.SignalKeyUse(layer.Index));
-        }
-
-        return null;
     }
 
     private void OnManualKeysClick(object sender, RoutedEventArgs e)
